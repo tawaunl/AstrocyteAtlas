@@ -16,8 +16,7 @@ library(ggrepel)
 library(scran.chan)
 source("~/Documents/scHelpers.R")
 #install for scDotPlot
-#remotes::install_git("ssh://git@ssh.code.roche.com/omni-bioinfo/packages/scDotPlot.git",
-#                     git = "external")
+#remotes::install_git("ssh://git@ssh.code.roche.com/omni-bioinfo/packages/scDotPlot.git",git = "external")
 
 # Load Data ====================================================================
 dir <- "~/Documents/AstrocytePaper"
@@ -272,7 +271,8 @@ sce %>%
                                                       "red", "darkgreen")),
                        featureLegends = FALSE,
                        annoHeight = 0.025,
-                       annoWidth = 0.1,fontSize = 14)
+                       annoWidth = 0.1,fontSize = 14,
+                       dotColors=c( "blue","#FFFFBF", "red"))
 dev.off()
 
 
@@ -328,6 +328,11 @@ for(name in names(gcSample)){
   edox2 <- pairwise_termsim(go)
   
   GoPlots[[name]] <-  treeplot(edox2, hclust_method = "average",showCategory=20)
+}
+for(name in names(gcSample)){
+  go <- gseKEGG(gcSample[[name]],organism = "mmu",nPermSimple = 10000,scoreType = "pos")
+  write.csv(data.frame(go@result),file = file.path(dir,"Figure2",paste0(name,"_KEGGresult.csv")))
+  
 }
 for(name in names(GoPlots)){
   pdf(file.path(dir,"Figure2",paste0(name,"_GODotPlot_tree.pdf")),width=10,height=10)

@@ -22,9 +22,7 @@ source("~/Documents/scHelpers.R")
 # Load Data ====================================================================
 dir <- "~/Documents/AstrocytePaper"
 data <- readRDS(file.path(dir,"Astrocyteintegration_AmbientRemoved_filtered_noneuron.RDS"))
-lps.data <- readRDS(file.path(dir,"Figure3","LPS_astrocytes.rds"))
-counts <- GetAssayData(lps.data,layer="counts")
-meta <- lps.data@meta.data
+
 
 # A. DE DAA1 vs DAA2=========================================================
 studies <- unique(data$StudyName)
@@ -212,11 +210,31 @@ dotplot(ck_up, by="NES") + ggtitle("GO:BP Pathways vs Homeostatic") +
 dev.off()
 write.csv(ck@result,file.path(dir,"Figure3","DAAs_vs_HomeoPathways.csv"))
 
-# E LPS Data UMAPS---------------------------------
+# D LPS Data UMAPS---------------------------------
 ## Recluster LPS Astros =====================================
+lps.data <- readRDS(file.path(dir,"Figure3","LPS_astrocytes.rds"))
+counts <- GetAssayData(lps.data,layer="counts")
+meta <- lps.data@meta.data
 astros <- CreateSeuratObject(counts = counts,meta.data = meta)
 astros <- runSeurat(astros)
+# remove bad clusters
+toRemove <- c(9,10)
+astros <- subset(astros,subset=seurat_clusters %in% toRemove,invert=T)
+set.seed(824)
+astros <- runSeurat(astros)
+astros <- FindClusters(astros,resolution = 0.15)
+#rename clusters
+astros$seurat_clusters <- gsub("0", "A", astros$seurat_clusters)
+astros$seurat_clusters <- gsub("1", "B", astros$seurat_clusters)
+astros$seurat_clusters <- gsub("2", "C", astros$seurat_clusters)
+astros$seurat_clusters <- gsub("3", "D", astros$seurat_clusters)
+astros$seurat_clusters <- gsub("4", "E", astros$seurat_clusters)
 
+astros$seurat_clusters <- gsub("A", "1", astros$seurat_clusters)
+astros$seurat_clusters <- gsub("B", "2", astros$seurat_clusters)
+astros$seurat_clusters <- gsub("C", "3", astros$seurat_clusters)
+astros$seurat_clusters <- gsub("D", "4", astros$seurat_clusters)
+astros$seurat_clusters <- gsub("E", "5", astros$seurat_clusters)
 ### Plot UMAPs =======================================
 scvi_coords <- get_scvi_coords(astros,astros$seurat_clusters)
 
@@ -227,12 +245,12 @@ ggplot(data=scvi_coords, aes(x=UMAP1, y=UMAP2, colour  = seurat_clusters)) +
 dev.off()
 p1 <- ggplot(data=scvi_coords, aes(x=UMAP1, y=UMAP2)) +
   geom_point(color="grey", size=2,alpha = 0.7) +
-  geom_point(data = scvi_coords %>% dplyr::filter(TREATMENT_NAME=="wt_wt|LPS"), color=hue_pal()(2)[1], size=1, alpha=0.8)+
+  geom_point(data = scvi_coords %>% dplyr::filter(TREATMENT_NAME=="wt_wt|LPS"), color=hue_pal()(2)[2], size=1, alpha=0.8)+
   theme_classic() + ggtitle("LPS") + theme(plot.title = element_text(hjust = 0.5)) +
   theme(plot.title = element_text(size = 24, face = "bold"))
 p2 <- ggplot(data=scvi_coords, aes(x=UMAP1, y=UMAP2)) +
   geom_point(color="grey", size=2,alpha = 0.7) +
-  geom_point(data = scvi_coords %>% dplyr::filter(TREATMENT_NAME=="wt_wt|Saline"), color=hue_pal()(2)[2], size=1, alpha=0.8)+
+  geom_point(data = scvi_coords %>% dplyr::filter(TREATMENT_NAME=="wt_wt|Saline"), color=hue_pal()(2)[1], size=1, alpha=0.8)+
   theme_classic() + ggtitle("Saline") + theme(plot.title = element_text(hjust = 0.5)) +
   theme(plot.title = element_text(size = 24, face = "bold"))
 
@@ -240,6 +258,125 @@ png(file.path(dir,"Figure3","UMAP_Treatment.png"),
     width = 3200,height=1500,res = 300)
 plot_grid(p1,p2)
 dev.off()
+
+saveRDS(astros, file.path(dir,"Figure3","ProcessedLPS_astros.rds"))
+# E. LPS Abundance Plot ----------------------------
+library(edgeR)
+library(RColorBrewer)
+library(viridis)
+abundances <- table(astros$seurat_clusters,astros$Sample) 
+abundances <- unclass(abundances) 
+
+extra.info <- astros@meta.data[match(colnames(abundances), astros$Sample),]
+d <- DGEList(abundances, samples=extra.info)
+d = calcNormFactors(d)
+d= estimateCommonDisp(d, verbose=TRUE)
+
+
+
+norm_counts <- as.data.frame(t(d$counts)) 
+colnames(norm_counts) <- paste("Cluster ", colnames(norm_counts), sep="")
+norm_counts <- norm_counts %>% mutate(Sample = rownames(.))
+coldata <- as.data.frame(astros@meta.data)
+coldata_short <- coldata %>% dplyr::select(Sample,Dose,TREATMENT_NAME,Mouse) %>% unique
+
+
+df_long_final <- left_join(norm_counts,coldata_short, by="Sample") 
+
+percentages <- data.frame(matrix(nrow = dim(df_long_final)[1],ncol = dim(df_long_final)[2]))
+sums <- data.frame(clustersums=rowSums(df_long_final[,-c(dim(df_long_final)[2]-3,
+                                                         dim(df_long_final)[2]-2,
+                                                         dim(df_long_final)[2]-1,
+                                                         dim(df_long_final)[2])]),ident=df_long_final$Sample)
+
+for (clust in 1:length(levels(factor(astros$seurat_clusters)))) {
+  for (sample in 1:length(df_long_final[,clust])) {
+    percent <- df_long_final[sample,clust]/sums[sample,1]
+    percentages[sample,clust]<- percent
+  }
+}
+
+percentages <- percentages +min(percentages[percentages>0],na.rm =T ) # value to add to offset zeros
+
+#add col data back in 
+percentages[,dim(df_long_final)[2]-3]<- df_long_final[,dim(df_long_final)[2]-3]
+percentages[,dim(df_long_final)[2]-2]<- df_long_final[,dim(df_long_final)[2]-2]
+percentages[,dim(df_long_final)[2]-1]<- df_long_final[,dim(df_long_final)[2]-1]
+percentages[,dim(df_long_final)[2]]<- df_long_final[,dim(df_long_final)[2]]
+
+
+colnames(percentages) <-  colnames(df_long_final)
+## Clr transformation for statistics
+clr <- percentages
+for (sample in 1:dim(percentages)[1]) {
+  tran <- log((percentages[sample,1:4]/exp(mean(as.numeric(log( percentages[sample,1:4]))))))
+  #tran <- clr(percentages[sample,1:4])
+  clr[sample,1:4]<- tran
+}
+
+df_long <- percentages %>% 
+  pivot_longer(c(c(paste0("Cluster ",1:(dim(df_long_final)[2]-4)))))
+df_transformed <- clr %>% 
+  pivot_longer(c(c(paste0("Cluster ",1:(dim(df_long_final)[2]-4)))))
+colnames(df_long)[5:6] <- c("Cluster","Percent")
+colnames(df_transformed)[5:6] <- c("Cluster","Percent")
+
+level_order <- c("Saline","LPS")
+df_long$Dose <- factor(df_long$Dose,levels = level_order) 
+df_long$Cluster <- factor(df_long$Cluster,levels =c(paste0("Cluster ",1:(dim(df_long_final)[2]-4))))
+df_transformed$Dose <- factor(df_transformed$Dose,levels = level_order) 
+df_transformed$Cluster <- factor(df_transformed$Cluster,levels =c(paste0("Cluster ",1:(dim(df_long_final)[2]-4))))
+
+fill.codes <- hue_pal()(2)
+color.codes <- hue_pal()(2)
+zone <- levels(factor(df_long$Dose))
+
+####Plot E ---------
+pdf(file.path(dir,"Figure3","E_AbundancePlot.pdf"),
+    width=14,height = 4)
+ggplot(df_long, aes(x=Dose, y=Percent,fill=Dose,colour = Dose)) +
+  theme_classic() +
+  geom_jitter(color="darkgrey",width = 0.4,size=3,alpha=0.6)  +
+  geom_boxplot(outlier.shape=NA,alpha=0.5) + 
+  facet_wrap(~Cluster,scales = "free",ncol=5) + xlab("Dose") +
+  theme(axis.text.y = element_text(size=20)) +
+  ylab("Cellularity Proportion") +  
+  theme(strip.text.x = element_text(size = 20,face = "bold"),
+        axis.title=element_text(size=16,face="bold"),
+        legend.text = element_text(size=14),
+        legend.title = element_text(size=16),
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank()) +
+  scale_fill_manual(values=setNames(fill.codes, zone))+
+  scale_color_manual(values=setNames(color.codes, zone))
+dev.off()
+
+## Significant testing ==================
+#Sig test on CLR transformed values
+sig.clusters <- list()
+for(cluster in 1:length(levels(factor(astros$seurat_clusters)))){
+  clusterName <- paste0("Cluster ",levels(factor(astros$seurat_clusters))[cluster])
+  dataCluster <- df_transformed1[which(df_transformed1$Cluster==clusterName),]
+  res <- kruskal.test(Percent ~ DiseaseLabel, data = dataCluster)
+  # check if there is any significance
+  if(res$p.value < 0.8/length(levels(factor(data$finalClusters)))){
+    sig.clusters[[clusterName]] <- res
+    # do a Welch's t-test to find which specific groups are different
+    res.AD <- wilcox.test(dataCluster$Percent[which(dataCluster$DiseaseLabel=="AD_control")],
+                          dataCluster$Percent[which(dataCluster$DiseaseLabel=="AD")])
+    res.MS <- wilcox.test(dataCluster$Percent[which(dataCluster$DiseaseLabel=="MS_control")],
+                          dataCluster$Percent[which(dataCluster$DiseaseLabel=="MS")])
+    if(res.MS$p.value < 0.9){
+      sig.clusters[[clusterName]][["MS"]] <- res.MS
+    }
+    if(res.AD$p.value < 0.9){
+      sig.clusters[[clusterName]][["AD"]] <- res.AD
+    }
+  }
+}
+
+write.csv(df_transformed1,"~/Documents/AstrocytePaper/2024-11-26 lucast3/Fig2D_AbundancePlotDataforStatistics_Mouse.csv")
+
 
 # F. DE Scoring -----------------------
 counts <- GetAssayData(object = astros,

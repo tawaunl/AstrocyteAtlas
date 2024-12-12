@@ -6,7 +6,7 @@ library(ggplot2)
 library(scater)
 library(ggfun)
 
-
+load("~/Documents/AstrocytePaper/humanFeatures.Rdata")
 # Load Data ---------------------------------------
 dir <- "~/Documents/AstrocytePaper/Human"
 coldata <- readRDS(file.path(dir,
@@ -92,8 +92,6 @@ dev.off()
 #D. Markers Dotplot -------------------------
 markers <- readRDS(file.path(dir,"m.out.harmony_2_donor_groupvar.0.5.rds"))
 
-feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCh38/GRCh38.IGIS4.0.genes.rds@REVISION-3")) %>%
-  dplyr::select(ID, symbol)
 
 markers <- markers$statistics
   
@@ -108,8 +106,8 @@ for (i in 1:length(markers)){
 markers_for_plotting_10_each_symbol <- list()
 markers_for_plotting_10_each_ID <- list()
 
-for (i in 1:length(m.out.0.5.with_symbols)) {
-  temp <- as.data.frame(m.out.0.5.with_symbols[[i]]) %>% dplyr::filter(cohen.mean!="Inf") %>% arrange(-cohen.mean)
+for (i in 1:length(m.out.with_symbols)) {
+  temp <- as.data.frame(m.out.with_symbols[[i]]) %>% dplyr::filter(cohen.mean!="Inf") %>% arrange(-cohen.mean)
   markers_for_plotting_10_each_symbol[[i]] <- temp$symbol %>% head(10) 
   markers_for_plotting_10_each_ID[[i]] <- temp$ID %>% head(10) 
 }
@@ -144,18 +142,18 @@ colors <- c(adjustcolor('#31a354', alpha.f = 0.9), '#8856a7',
             adjustcolor('#c51b8a', 0.9),
             adjustcolor('#d95f0e', alpha.f = 0.9),
             adjustcolor('turquoise1', alpha.f = 0.9))
-
+rownames(out_for_plotting) <- markers_for_plotting_10_each_symbol
 png(file.path(dir,"Figure5","D_MarkersDotPlot.png"),
     width = 2000, height = 2100, res = 300)
 plotDots(out_for_plotting, factor(rownames(out_for_plotting),markers_for_plotting_10_each_symbol),
-         group="clusters_0.5", scale=TRUE, center=TRUE) + xlab("Cluster") +
+         group="Cluster", scale=TRUE, center=TRUE) + xlab("Cluster") +
   theme_classic() +
   theme(axis.text.x = element_text(color = "black"), axis.text.y = element_text(colour="black", size = 5.5), axis.ticks.x  = element_blank()) + ylab("Cluster markers")
 dev.off()
 
-pdf(file.path(dir,"Figure5","D_UpdatedMarkersDotPlot.png"))
+pdf(file.path(dir,"Figure5","D_UpdatedMarkersDotPlot.png"),width=16,height=10)
 out_for_plotting %>% 
-  scDotPlot::scDotPlot(features = features,
+  scDotPlot::scDotPlot(features = factor(rownames(out_for_plotting),markers_for_plotting_10_each_symbol),
                        group = "Cluster",
                        #block = "Sample",
                        scale = TRUE,
@@ -166,5 +164,6 @@ out_for_plotting %>%
                                          "Marker" = colors),
                        featureLegends = FALSE,
                        annoHeight = 0.025,
-                       annoWidth = 0.1)
+                       annoWidth = 0.1,flipPlot=T,
+                       dotColors=c("blue","#FFFFBF", "red"))
 dev.off()
