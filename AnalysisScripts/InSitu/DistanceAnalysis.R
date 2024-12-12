@@ -18,7 +18,6 @@ det_files
 det_names<-c()                                                                           # storage for names of datasets
 det_data<-list()                                                                         # storage for datasets
 
-
 for(i in 1:length(det_files)) {                                                          
   
   # (1) create dataset name from filename/datafile, store in variable det_temp
