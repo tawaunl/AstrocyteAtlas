@@ -1,0 +1,100 @@
+---
+title: "Infer LDA weights"
+author: "Tawaun Lucas"
+date: "3/30/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r results='hide'}
+library(Seurat)
+library(CountClust)
+
+```
+
+#Main Function
+```{r Main Funtcion}
+topicModeling <- function(mat, n = 16, tol = 0.1, save.path) {
+  
+  # set parameters for topic modeling 
+  n.topics <- as.numeric(n)
+  tolerance <- as.numeric(tol)
+  
+  # create directories to save the results in 
+  sub.dir <- paste0(n.topics, "topics_tol", tolerance)
+  dir.create(file.path(save.path, sub.dir), recursive = T)
+  
+  FitGoM(mat, K = n.topics, tol = tolerance,
+         path_rda = file.path(save.path, sub.dir, paste0('FitGoM_k', n.topics, '_tol', tolerance, '.rda')))
+  gc()
+  gc()
+}
+     
+```
+
+#Parameters
+```{r}
+subsample = F # Sub-sample for testing
+data <- readRDS("/gstore/project/neurodegen_meta/data/AstrocyteIntegration_AmbientRemoved_filtered_noneuron.RDS")
+mat <- GetAssayData(data,slot = "counts",assay = "RNA")
+if (subsample) {
+  downsampled.obj <- data[, sample(colnames(data), size = 20000, replace=F)]
+  mat <- GetAssayData(downsampled.obj,slot = "counts",assay = "RNA")
+}
+mat <- mat[-which(rowSums(mat)==0)]
+mat <- as.matrix(t_deep(mat))
+
+out.dir <- "/gstore/project/neurodegen_meta/neurodegeneration_meta-analysis/Rscripts/TopicModeling"
+ks = c(4, 6, 8, 10, 11, 12,13,14,16,18)
+dir.create(out.dir, recursive = T)
+```
+
+# Run
+```{r}
+for (k in ks){
+  fit <-topicModeling(mat, k, tol = 0.1,out.dir)
+}
+```
+ 
+# Write Tables and Extract BIC 
+```{r BIC}
+models <- list()
+i <- 1
+for (k in ks) {
+    k_dir <- paste0(out.dir, "/", k, "topics_tol", tol)
+    rda_fname <- paste0(k_dir, "/", "FitGoM_k", k, "_tol", tol , ".rda")
+    
+    load(rda_fname)
+
+    models[[i]] <- Topic_clus
+    
+    usage <- as.data.frame(Topic_clus$omega)
+    colnames(usage) <- paste0("lda_", colnames(usage))
+
+    theta <- as.data.frame(Topic_clus$theta)
+    colnames(theta) <- paste0("lda_", colnames(theta))
+
+    write.csv(usage, file.path(k_dir, "usage.csv"))
+    write.csv(theta, file.path(k_dir, "theta.csv"))
+
+    top_features_min <- ExtractTopFeatures(theta, top_features = 200, shared = T, method = "poisson", options = "min")
+    write.csv(top_features_min, file.path(k_dir, "score_min.csv"))
+    
+    i <- i + 1
+}
+
+counts <- t(as.matrix(GetAssayData(mat)))
+
+out <- compGoM(counts, models)
+
+n.topics <- ks
+names(out) <- paste0("topic_", n.topics)
+bic.plot <- sapply(names(out), function(x) out[[x]]$BIC)
+bic <- data.frame(BIC=bic.plot, k=n.topics)
+
+write.csv(bic, file.path(out.dir, "bic.csv"))
+```
+ 

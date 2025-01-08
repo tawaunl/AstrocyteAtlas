@@ -1,0 +1,36 @@
+---
+title: "Filter data for LDA"
+author: "Tawaun Lucas"
+date: "3/30/2023"
+output: html_document
+---
+Filter out any genes that occur in more than 97% of cells
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Load Librarires
+
+```{r cars}
+library(Seurat)
+```
+
+#Load Data
+
+```{r pressure, echo=FALSE}
+data <- readRDS("/gstore/project/neurodegen_meta/data/AstrocyteIntegration_AmbientRemoved_filtered_noneuron.RDS")
+counts <- GetAssayData(data,slot = "data",assay = "RNA")
+```
+
+#Find occurences
+```{r}
+per_cell_occurences <- rowSums(counts)
+```
+
+#Filter data
+```{r}
+discard <- which(per_cell_occurences==0)
+filtered_counts <- counts[-discard,]
+```
+
