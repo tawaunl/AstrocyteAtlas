@@ -1,0 +1,378 @@
+---
+title: "Local_analyses"
+output: html_document
+date: "2024-07-07"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(SingleCellExperiment)
+library(scater)
+library(ggplot2)
+library(dplyr)
+library(gridExtra)
+```
+
+
+```{r}
+
+se_ast <- readRDS("/gstore/scratch/u/novikovg/Astrocytes_meta/AD_MS_PD_cellbender_harmony_2024/harmony_integration/another_run_after_removing_high_mito_clusters/integration/AD_MS_PD_astrocytes.CLEAN_from_non_astrocytes_AND_clusters_high_in_mito.cellbender_counts.20cell_filter.onlychanHVG_for_PCA.with_harmony.liddelow_cellranger_rest_cellbender.rds")
+
+```
+
+Generate a basic UMAP
+
+```{r}
+png("/gne/web/dev/apache/htdocs/people/novikovg/Astrocytes_meta/Harmony_AD_MS_PD_integration_2024/harmony_results_with_removing_mito_clusters/UMAP_genetic.png", res=300, width = 2000, height = 2000)
+plotReducedDim(se_ast, dimred = "UMAP_theta_2_donor_groupvar", point_size = 0.5, point_alpha = 0.5)
+dev.off()
+```
+
+Let's get per study UMAP to see how well integrated everything is
+
+```{r}
+
+get_umap_plot <- function(scvi_coords_final,dataset) {
+  ### can be used for dataset specific plotting, but also for clusters
+  p <- ggplot(data=scvi_coords_final, aes(x=UMAP1, y=UMAP2)) +
+    geom_point(color="grey", size=2,alpha = 1) +
+    geom_point(data = scvi_coords_final %>% dplyr::filter((!!sym(dataset))==1), color="dodgerblue2", size=0.5, alpha=0.5)+
+    theme_classic() + ggtitle(dataset) + theme(plot.title = element_text(hjust = 0.5)) +
+    theme(plot.title = element_text(size = 24, face = "italic")) + 
+    theme(axis.line=element_blank(),axis.text.x=element_blank(),
+          axis.text.y=element_blank(),axis.ticks=element_blank(),
+          axis.title.x=element_blank(),
+          axis.title.y=element_blank(),legend.position="none",
+          panel.background=element_blank(),panel.border=element_blank(),panel.grid.major=element_blank(),
+          panel.grid.minor=element_blank(),plot.background=element_blank()) 
+    
+  return(p)
+}
+
+
+get_scvi_coords <- function(se) {
+  scvi_coords <- reducedDims(se)[["UMAP_theta_2_donor_groupvar"]]
+  colnames(scvi_coords) <- c("UMAP1","UMAP2")
+  scvi_coords <- as.data.frame(cbind(scvi_coords,colData(se)))
+
+  results <- fastDummies::dummy_cols(se$studybatch)
+  colnames(results) <- unlist(lapply(colnames(results),function(x) strsplit(x,".data_")[[1]][2]))
+  results <- results[,-1]
+  scvi_coords <- cbind(scvi_coords, results)
+
+  return(scvi_coords)
+
+}
+
+scvi_coords <- get_scvi_coords(se_ast)
+
+
+list_of_plots <- list()
+
+studies <- unique(se_ast$studybatch)
+
+for (i in 1:length(studies)) {
+  p <- get_umap_plot(scvi_coords,studies[i])
+  list_of_plots[[i]] <- p
+}
+
+
+png("/gne/web/dev/apache/htdocs/people/novikovg/Astrocytes_meta/Harmony_AD_MS_PD_integration_2024/harmony_results_with_removing_mito_clusters/AD_PD_MS_studies.UMAPs.png",width = 3000, height = 800)
+do.call("grid.arrange", c(list_of_plots, ncol=7))
+dev.off()
+```
+Decided on resolution 0.5 (resolution with >1 marker at cohen.mean >= 0.4)
+
+m.out.harmony_2_donor_groupvar.0.3.rds - too low
+[1] 13
+[1] 15
+[1] 6
+m.out.harmony_2_donor_groupvar.0.4.rds
+[1] 12
+[1] 0
+[1] 4
+[1] 15
+m.out.harmony_2_donor_groupvar.0.5.rds
+[1] 3
+[1] 8
+[1] 3
+[1] 1
+[1] 2
+[1] 14
+[1] 8
+[1] 11
+m.out.harmony_2_donor_groupvar.0.6.rds - same # of clusters as 0.5
+[1] 3
+[1] 8
+[1] 4
+[1] 1
+[1] 2
+[1] 15
+[1] 8
+[1] 11
+m.out.harmony_2_donor_groupvar.0.7.rds
+[1] 3
+[1] 7
+[1] 0
+[1] 2
+[1] 2
+[1] 16
+[1] 6
+[1] 8
+[1] 13
+m.out.harmony_2_donor_groupvar.0.8.rds
+[1] 3
+[1] 7
+[1] 0
+[1] 2
+[1] 2
+[1] 16
+[1] 6
+[1] 8
+[1] 13
+
+Let's get the cluster UMAP
+
+```{r}
+clusters <- readRDS("Clusters_res_harmony_2_donor_groupvar_0.5.rds")
+se_ast$clusters_0.5 <- clusters$membership
+
+colors <- c(adjustcolor('#31a354', alpha.f = 0.9), '#8856a7', adjustcolor('#fa9fb5', 0.9),  '#2b8cbe', adjustcolor('#fec44f', alpha.f = 0.9), adjustcolor('#c51b8a', 0.9),  adjustcolor('#d95f0e', alpha.f = 0.9), adjustcolor('turquoise1', alpha.f = 0.9))
+
+png("/gne/web/dev/apache/htdocs/people/novikovg/Astrocytes_meta/Harmony_AD_MS_PD_integration_2024/harmony_results_with_removing_mito_clusters/UMAP_cluster_res_0.5.png", res=300, width = 2000, height = 2000)
+plotReducedDim(se_ast, dimred = "UMAP_theta_2_donor_groupvar", point_size = 0.5, point_alpha = 0.5, colour_by = "clusters_0.5") + guides(colour = guide_legend(override.aes = list(size=4))) + scale_color_manual(values = colors)
+dev.off()
+```
+
+
+Donor-cluster plot
+
+```{r}
+
+coldata <- as.data.frame(colData(se_ast))
+
+study_cluster_tmp_by_study <- coldata %>%
+  group_by(donorIdUnique, clusters_0.5) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n / sum(n))  %>% as.data.frame()
+
+coldata_donors <- coldata %>% dplyr::select(donorIdUnique, studybatch) %>% unique
+
+
+study_cluster_tmp_by_study_final <- left_join(study_cluster_tmp_by_study, coldata_donors, by = "donorIdUnique")
+
+##colors
+library(RColorBrewer)
+colors <- brewer.pal(length(studies), "Set3")
+colors <- c(colors, "burlywood4")
+
+
+p_donor_cluster_boxplot <- ggplot(study_cluster_tmp_by_study_final, aes(studybatch, freq,  color = studybatch, fill = studybatch)) + scale_color_manual(values = colors, name = "Study") +  geom_point(size = 1)+ geom_boxplot(outlier.shape = NA, alpha=0.5) +
+  scale_fill_manual(values = colors) +  theme_classic() + theme(axis.text.x = element_blank(), axis.text.y = element_text(colour="black", size = 6), axis.ticks.x  = element_blank(), axis.title.y = element_text(size = 8)) + xlab("") + ylab("Proportion of cells from a donor") + facet_wrap(~clusters_0.5,ncol = 8) + guides(fill="none") + xlab("")
+
+png("/gne/web/dev/apache/htdocs/people/novikovg/Astrocytes_meta/Harmony_AD_MS_PD_integration_2024/harmony_results_with_removing_mito_clusters/Boxplot_donor_cells_per_cluster.png",width = 2500, height = 850, res = 250)
+p_donor_cluster_boxplot + theme(legend.title = element_text(size = 6),  legend.text = element_text(size = 4)) +  guides(color = guide_legend(override.aes = list(size = 0.5)))
+dev.off()
+
+
+
+```
+
+Generate cluster-marker heatmap (ran this on himem node)
+
+```{r}
+
+m.out.0.5 <- readRDS("m.out.harmony_2_donor_groupvar.0.5.rds")
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCh38/GRCh38.IGIS4.0.genes.rds@REVISION-3")) %>% dplyr::select(ID, symbol)
+
+
+get_cluster_marker_symbols <- function(res, feat) {
+  
+  m.out <- readRDS(paste("m.out.harmony_2_donor_groupvar.", res,".rds", sep=""))
+  m.out <- m.out$statistics
+  
+  m.out.with_symbols <- list()
+  
+  for (i in 1:length(m.out)){
+  tmp <- m.out[[i]]
+  tmp$ID <- rownames(tmp)
+  m.out.with_symbols[[i]] <- left_join(tmp, feat, by = "ID")
+  }
+
+return(m.out.with_symbols)  
+}
+
+m.out.0.5.with_symbols <- get_cluster_marker_symbols(0.5, feat)
+
+markers_for_plotting_10_each_symbol <- list()
+markers_for_plotting_10_each_ID <- list()
+
+for (i in 1:length(m.out.0.5.with_symbols)) {
+  temp <- as.data.frame(m.out.0.5.with_symbols[[i]]) %>% dplyr::filter(cohen.mean!="Inf") %>% arrange(-cohen.mean)
+  markers_for_plotting_10_each_symbol[[i]] <- temp$symbol %>% head(10) 
+  markers_for_plotting_10_each_ID[[i]] <- temp$ID %>% head(10) 
+}
+
+markers_for_plotting_10_each_ID <- unique(unlist(markers_for_plotting_10_each_ID))
+markers_for_plotting_10_each_symbol <- unique(unlist(markers_for_plotting_10_each_symbol))
+
+out_for_plotting <- out[markers_for_plotting_10_each_ID,]
+rownames(out_for_plotting) <- rowData(out_for_plotting)$symbol
+
+out_for_plotting$clusters_0.5 <- clusters$membership
+png("/gne/web/dev/apache/htdocs/people/novikovg/Astrocytes_meta/Harmony_AD_MS_PD_integration_2024/harmony_results_with_removing_mito_clusters/Cluster_markers.top_10_markers.res_0.5.png", width = 2000, height = 2100, res = 300)
+plotDots(out_for_plotting, factor(rownames(out_for_plotting),markers_for_plotting_10_each_symbol), group="clusters_0.5", scale=TRUE, center=TRUE) + xlab("Cluster") + theme_classic() +  theme(axis.text.x = element_text(color = "black"), axis.text.y = element_text(colour="black", size = 5.5), axis.ticks.x  = element_blank()) + ylab("Cluster markers")
+dev.off()
+
+
+```
+
+Cellularity (ran on himem)
+
+```{r}
+library(edgeR)
+library(tidyr)
+abundances <- table(out$clusters_res_0.5, out$donorIdUnique)
+abundances <- unclass(abundances)
+
+extra.info <- colData(out)[match(colnames(abundances), out$donorIdUnique),]
+
+d <- DGEList(abundances, samples=extra.info)
+d = calcNormFactors(d)
+d= estimateCommonDisp(d, verbose=TRUE)
+
+groups <- as.data.frame(colData(out)) %>% dplyr::select(studybatch, donorIdUnique) %>% unique
+groups_final <- groups %>% dplyr::arrange(match(donorIdUnique, colnames(d)))
+
+lognorm_counts <- as.data.frame(t(cpmByGroup(d, group = groups_final$donorIdUnique, log = TRUE)))
+
+colnames(lognorm_counts) <- paste("cluster_", colnames(lognorm_counts), sep="")
+lognorm_counts <- lognorm_counts %>% mutate(donor_id = rownames(.))
+
+df_long <- lognorm_counts %>%
+  pivot_longer(c(cluster_1, cluster_2, cluster_3, cluster_4, cluster_5, cluster_6,cluster_7, cluster_8))
+
+colnames(df_long) <- c("donorIdUnique", "cluster", "logCPM")
+
+coldata <- as.data.frame(colData(out))
+coldata$diagnosis_harmonized_by_disease <- 
+  ifelse(coldata$studybatch %in% c("jakel", "schirmer", "absinta", "bryois") & coldata$diagnosis_harmonized == "Control", "MS_Control",
+         
+ifelse(coldata$studybatch %in% c("smajic","wang", "kamath") &
+coldata$diagnosis_harmonized == "Control", "PD_Control",
+
+ifelse(out$studybatch %in% c("cain", "morabito","gerrits", "smith", "SEA-AD", "liddelow") &
+out$diagnosis_harmonized == "Control", "AD_Control",
+out$diagnosis_harmonized)))
+
+coldata$diagnosis_harmonized_by_disease <- ifelse(coldata$diagnosis_harmonized == "RRMS", "MS", coldata$diagnosis_harmonized_by_disease)
+
+  
+coldata_short <- coldata %>% dplyr::select(studybatch, donorIdUnique, diagnosis_harmonized_by_disease) %>% unique
+
+df_long_final <- left_join(df_long,coldata_short, by="donor_for_DE",multiple = "all")
+
+### cellularity all studies combined
+
+df_long_final$cluster <- factor(df_long_final$cluster, levels = unique(df_long_final$cluster))
+
+
+df_long_final$diagnosis_harmonized_by_disease <- factor(df_long_final$diagnosis_harmonized_by_disease, levels = c("AD_Control","AD", "MS_Control", "MS", "PD_Control", "PD"))
+
+df_long_final$cluster_number <- unlist(lapply(df_long_final$cluster, function(x) strsplit(as.character(x), split="_")[[1]][2]))
+
+df_long_final$cluster_number <- factor(df_long_final$cluster_number, levels =unique(df_long_final$cluster_number))
+
+
+colors <- c(adjustcolor('dodgerblue3', alpha.f = 0.2), adjustcolor('dodgerblue3', alpha.f = 1),  adjustcolor('darkolivegreen4', alpha.f = 0.2), adjustcolor('darkolivegreen4', alpha.f = 1), adjustcolor('#d95f0e', alpha.f = 0.2),  adjustcolor('#d95f0e', alpha.f = 0.8))
+
+p_cellularity <- ggplot(df_long_final, aes(x=diagnosis_harmonized_by_disease, y=logCPM,fill=diagnosis_harmonized_by_disease)) + theme_classic() +geom_boxplot(outlier.shape=NA) + geom_jitter(width = 0.1, size = 1)+ facet_wrap(~cluster_number, ncol=8) + theme(axis.text.x = element_blank(), axis.ticks = element_blank()) + xlab("") + scale_fill_manual(values = colors)
+
+
+png("/gne/web/dev/apache/htdocs/people/novikovg/Astrocytes_meta/Harmony_AD_MS_PD_integration_2024/harmony_results_with_removing_mito_clusters/Cellularity_res_0.5.png", width = 4000, height = 800, res = 300)
+p_cellularity
+dev.off()
+
+get_cluster_sig_res <- function(sce) {
+
+abundances <- table(sce$clusters_res_0.5,sce$donorIdUnique)
+abundances <- unclass(abundances)
+
+# Attaching some column metadata.
+extra.info <- colData(sce)[match(colnames(abundances), sce$donorIdUnique),]
+y.ab <- DGEList(abundances, samples=extra.info)
+keep <- filterByExpr(y.ab, group=y.ab$samples$diagnosis_harmonized_by_disease)
+y.ab <- y.ab[keep,]
+summary(keep)
+
+
+design <- model.matrix((~factor(studybatch) + factor(diagnosis_harmonized_by_disease)), y.ab$samples)
+#design <- model.matrix(~ factor(diagnosis_harmonized), y.ab$samples)
+
+y.ab <- estimateDisp(y.ab, design, trend="none")
+fit.ab <- glmQLFit(y.ab, design, robust=TRUE, abundance.trend=FALSE)
+summary(fit.ab$var.prior)
+
+res <- glmQLFTest(fit.ab, coef=ncol(design))
+summary(decideTests(res))
+res.cluster <- as.data.frame(res$table) %>% mutate(cluster=rownames(res$table),
+                                                      FDR = p.adjust(PValue,method="BH"),
+                                                   neglogFDR=log(p.adjust(PValue,method="BH"))*(-1),
+                                                   neglogPValue=log(PValue)*(-1))
+res.cluster$cluster <- factor(res.cluster$cluster,
+                                levels=unique(res.cluster$cluster[order(res.cluster$neglogPValue)]), ordered=TRUE)
+
+return(res.cluster)
+
+}
+
+
+out_cluster_res_AD <- get_cluster_sig_res(out[,out$diagnosis_harmonized_by_disease %in% c("AD_Control", "AD")])
+
+
+p_by_study_c3 <- ggplot(df_long_final %>% dplyr::filter(diagnosis_harmonized %in% c("AD","Control") & cluster == "cluster_3"), aes(x=diagnosis_harmonized, y=logCPM,fill=diagnosis_harmonized)) + theme_classic() +geom_boxplot(outlier.shape=NA) + geom_jitter(width = 0.1)+ facet_wrap(~studybatch, ncol= 8) + theme(axis.text.x = element_text(angle = 65, vjust = 0.5)) + scale_fill_manual(values = c("gray43","dodgerblue3"), name = "Diagnosis") + xlab("") + theme(axis.text.x = element_blank(), axis.ticks = element_blank())
+
+```
+
+Get UMAP fro AD up score
+
+```{r}
+
+AD_up_score <- readRDS("/gstore/scratch/u/novikovg/Astrocytes_meta/AD_MS_PD_cellbender_harmony_2024/harmony_integration/another_run_after_removing_high_mito_clusters/DEGs/AD_up_score_for_each_cell.rds")
+se_ast$AD_up_score <- AD_up_score
+
+AD_down_score <- readRDS("/gstore/scratch/u/novikovg/Astrocytes_meta/AD_MS_PD_cellbender_harmony_2024/harmony_integration/another_run_after_removing_high_mito_clusters/DEGs/AD_down_score_for_each_cell.rds")
+se_ast$AD_down_score <- AD_down_score
+
+library(wesanderson)
+p_ad_score_up <- plotReducedDim(se_ast, dimred = "UMAP_theta_2_donor_groupvar", colour_by = "AD_up_score", point_size = 0.5, point_alpha = 0.5) + scale_colour_gradientn(colours = wes_palette("Zissou1", n = 5), name = "AD up score \naverage \nlogcounts") + theme_classic() + theme(legend.title = element_text(size = 8))
+
+p_ad_score_down <- plotReducedDim(se_ast, dimred = "UMAP_theta_2_donor_groupvar", colour_by = "AD_down_score", point_size = 0.5, point_alpha = 0.5) + scale_colour_gradientn(colours = wes_palette("Zissou1", n = 5), name = "AD down score \naverage \nlogcounts") + theme_classic() + theme(legend.title = element_text(size = 8))
+
+png("/gne/web/dev/apache/htdocs/people/novikovg/Astrocytes_meta/Harmony_AD_MS_PD_integration_2024/harmony_results_with_removing_mito_clusters/UMAP_AD_score_up.png", res=300, width = 2000, height = 2000)
+p_ad_score_up
+dev.off()
+
+
+
+
+```
+
+Mouse astrocyte space markers (ran on himem), redo later 
+
+```{r}
+# mouse_markers <- readRDS("/gstore/data/astroMetaAnalysis/data/FinalIntegratedMarkers.rds")
+# genes_V2_both <- readRDS("../DEGs/mous_human_gene_mapping.rds")
+# mouse_markers <- mouse_markers$statistics
+# 
+# markers_for_plotting_10_each
+# 
+# png("/gne/web/dev/apache/htdocs/people/novikovg/Astrocytes_meta/Harmony_AD_MS_PD_integration_2024/harmony_results_with_removing_mito_clusters/Cluster_markers.top_10_markers.res_0.5.png", width = 2000, height = 2100, res = 300)
+# plotDots(out_for_plotting, factor(rownames(out_for_plotting),markers_for_plotting_10_each_symbol), group="clusters_0.5", scale=TRUE, center=TRUE) + xlab("Cluster") + theme_classic() +  theme(axis.text.x = element_text(color = "black"), axis.text.y = element_text(colour="black", size = 5.5), axis.ticks.x  = element_blank()) + ylab("Cluster markers")
+
+```
+

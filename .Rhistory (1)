@@ -1,0 +1,512 @@
+"6" = "NRXN1-hi",
+"7" = "APOE-hi",
+"8" = "SLC1A2-hi")
+features <- unlist(markers_for_plotting_10_each_symbol)%>%
+purrr::set_names(rep(subtypeList, each = 10))
+markers_for_plotting_10_each_ID <- unique(unlist(markers_for_plotting_10_each_ID))
+for (i in 1:length(m.out.with_symbols)) {
+temp <- as.data.frame(m.out.with_symbols[[i]]) %>% dplyr::filter(cohen.mean!="Inf") %>% arrange(-cohen.mean)
+markers_for_plotting_10_each_symbol[[i]] <- temp$symbol %>% head(10)
+markers_for_plotting_10_each_ID[[i]] <- temp$ID %>% head(10)
+}
+subtypeList <- list("1" = "NEAT1-hi",
+"2" = "GFAP-hi",
+"3" = "DST-hi",
+"4" = "BCYRN-hi",
+"5" = "ADGRV1-hi",
+"6" = "NRXN1-hi",
+"7" = "APOE-hi",
+"8" = "SLC1A2-hi")
+features <- unlist(markers_for_plotting_10_each_symbol)%>%
+purrr::set_names(rep(subtypeList, each = 10))
+markers_for_plotting_10_each_ID <- unique(unlist(markers_for_plotting_10_each_ID))
+markers_for_plotting_10_each_symbol <- unique(unlist(markers_for_plotting_10_each_symbol))
+out_for_plotting <- out[markers_for_plotting_10_each_ID,]
+out_for_plotting$clusters_0.5 <- clusters$membership
+markers_for_plotting_10_each_symbol
+out <- readRDS("~/Downloads/aggregated_cells.AD_MS_PD.070724.donorIdUnique_and_cluster.rds")
+out <- readRDS("~/Downloads/aggregated_cells.AD_MS_PD.070724.DonoruniqueID.Cain_subset_AD_controls.SE.rds")
+View(out)
+out <- readRDS("~/Downloads/aggregated_cells.AD_MS_PD.070724.donorIdUnique_and_cluster.rds")
+gc()
+out <- readRDS("~/Downloads/aggregated_cells.AD_MS_PD.070724.donorIdUnique_and_cluster.rds")
+mem.maxVSize()
+Sys.setenv('R_MAX_VSIZE'=32000000000)
+out <- readRDS("~/Downloads/aggregated_cells.AD_MS_PD.070724.donorIdUnique_and_cluster.rds")
+source("~/Documents/scHelpers.R")
+library(dplyr)
+library(ggplot2)
+library(scater)
+library(ggfun)
+load("~/Documents/AstrocytePaper/humanFeatures.Rdata")
+# Load Data ---------------------------------------
+dir <- "~/Documents/AstrocytePaper/Human"
+clusters <- readRDS(file.path(dir,
+"Clusters_res_harmony_2_donor_groupvar_0.5.rds"))
+coldata <- readRDS(file.path(dir,
+"AD_MS_PD_astrocytes.CLEAN_from_non_astrocytes_AND_clusters_high_in_mito.cellbender_counts.20cell_filter.COLDATA.correct_diagnosis_harmonized_by_disease.rds"))
+#D. Markers Dotplot -------------------------
+markers <- readRDS(file.path(dir,"m.out.harmony_2_donor_groupvar.0.5.rds"))
+markers <- markers$statistics
+m.out.with_symbols <- list()
+for (i in 1:length(markers)){
+tmp <- markers[[i]]
+tmp$ID <- rownames(tmp)
+m.out.with_symbols[[i]] <- left_join(tmp, feat, by = "ID")
+}
+markers_for_plotting_10_each_symbol <- list()
+markers_for_plotting_10_each_ID <- list()
+for (i in 1:length(m.out.with_symbols)) {
+temp <- as.data.frame(m.out.with_symbols[[i]]) %>% dplyr::filter(cohen.mean!="Inf") %>% arrange(-cohen.mean)
+markers_for_plotting_10_each_symbol[[i]] <- temp$symbol %>% head(10)
+markers_for_plotting_10_each_ID[[i]] <- temp$ID %>% head(10)
+}
+subtypeList <- list("1" = "NEAT1-hi",
+"2" = "GFAP-hi",
+"3" = "DST-hi",
+"4" = "BCYRN-hi",
+"5" = "ADGRV1-hi",
+"6" = "NRXN1-hi",
+"7" = "APOE-hi",
+"8" = "SLC1A2-hi")
+features <- unlist(markers_for_plotting_10_each_symbol)%>%
+purrr::set_names(rep(subtypeList, each = 10))
+markers_for_plotting_10_each_ID <- unique(unlist(markers_for_plotting_10_each_ID))
+markers_for_plotting_10_each_symbol <- unique(unlist(markers_for_plotting_10_each_symbol))
+out_for_plotting <- out[markers_for_plotting_10_each_ID,]
+rownames(out)
+View(out)
+out <- readRDS("~/Downloads/aggregated_cells.AD_MS_PD.070724.DonoruniqueID_and_cluster.SE.rds")
+out_for_plotting <- out[markers_for_plotting_10_each_ID,]
+out_for_plotting$clusters_0.5 <- clusters$membership
+colData(out_for_plotting) <- data.frame(colData(out_for_plotting)) %>%
+dplyr::mutate(Cluster = dplyr::recode_factor(cluster,
+!!!subtypeList)) %>% DataFrame()
+rowData(out_for_plotting)$Marker <- features[match(rownames(out_for_plotting), features)] |>
+names() %>%
+factor(levels = unlist(subtypeList))
+View(out_for_plotting)
+colors <- c(adjustcolor('#31a354', alpha.f = 0.9), '#8856a7',
+adjustcolor('#fa9fb5', 0.9),  '#2b8cbe',
+adjustcolor('#fec44f', alpha.f = 0.9),
+adjustcolor('#c51b8a', 0.9),
+adjustcolor('#d95f0e', alpha.f = 0.9),
+adjustcolor('turquoise1', alpha.f = 0.9))
+plotDots(out_for_plotting, factor(rownames(out_for_plotting),markers_for_plotting_10_each_symbol),
+group="Cluster", scale=TRUE, center=TRUE) + xlab("Cluster") +
+theme_classic() +
+theme(axis.text.x = element_text(color = "black"), axis.text.y = element_text(colour="black", size = 5.5), axis.ticks.x  = element_blank()) + ylab("Cluster markers")
+rownames(out_for_plotting)
+View(markers)
+?plotDots
+rownames(out_for_plotting)
+rownames(out_for_plotting) <- markers_for_plotting_10_each_symbol
+plotDots(out_for_plotting, factor(rownames(out_for_plotting),markers_for_plotting_10_each_symbol),
+group="Cluster", scale=TRUE, center=TRUE) + xlab("Cluster") +
+theme_classic() +
+theme(axis.text.x = element_text(color = "black"), axis.text.y = element_text(colour="black", size = 5.5), axis.ticks.x  = element_blank()) + ylab("Cluster markers")
+plotDots(out_for_plotting, factor(rownames(out_for_plotting),markers_for_plotting_10_each_symbol),
+group="Cluster", scale=TRUE, center=TRUE,exprs_values = "logCPM") + xlab("Cluster") +
+theme_classic() +
+theme(axis.text.x = element_text(color = "black"), axis.text.y = element_text(colour="black", size = 5.5), axis.ticks.x  = element_blank()) + ylab("Cluster markers")
+plotDots(out_for_plotting, factor(rownames(out_for_plotting),markers_for_plotting_10_each_symbol),
+group="Cluster", scale=TRUE, center=TRUE,exprs_values = "counts") + xlab("Cluster") +
+theme_classic() +
+theme(axis.text.x = element_text(color = "black"), axis.text.y = element_text(colour="black", size = 5.5), axis.ticks.x  = element_blank()) + ylab("Cluster markers")
+plotDots(out_for_plotting, factor(rownames(out_for_plotting),markers_for_plotting_10_each_symbol),
+group="Cluster", scale=TRUE, center=TRUE,exprs_values = "logCPM") + xlab("Cluster") +
+theme_classic() +
+theme(axis.text.x = element_text(color = "black"), axis.text.y = element_text(colour="black", size = 5.5), axis.ticks.x  = element_blank()) + ylab("Cluster markers")
+out_for_plotting %>%
+scDotPlot::scDotPlot(features = features,
+group = "Cluster",
+#block = "Sample",
+scale = TRUE,
+cluster = FALSE,
+groupAnno = "Cluster",
+featureAnno = "Marker",
+annoColors = list("Cluster" = colors,
+"Marker" = colors),
+featureLegends = FALSE,
+annoHeight = 0.025,
+annoWidth = 0.1)
+out_for_plotting %>%
+scDotPlot::scDotPlot(features = factor(rownames(out_for_plotting),markers_for_plotting_10_each_symbol),
+group = "Cluster",
+#block = "Sample",
+scale = TRUE,
+cluster = FALSE,
+groupAnno = "Cluster",
+featureAnno = "Marker",
+annoColors = list("Cluster" = colors,
+"Marker" = colors),
+featureLegends = FALSE,
+annoHeight = 0.025,
+annoWidth = 0.1)
+out_for_plotting %>%
+scDotPlot::scDotPlot(features = factor(rownames(out_for_plotting),markers_for_plotting_10_each_symbol),
+group = "Cluster",
+#block = "Sample",
+scale = TRUE,
+cluster = FALSE,
+exprs_values = "logCPM",
+groupAnno = "Cluster",
+featureAnno = "Marker",
+annoColors = list("Cluster" = colors,
+"Marker" = colors),
+featureLegends = FALSE,
+annoHeight = 0.025,
+annoWidth = 0.1)
+?scDotPlot::scDotPlot
+out_for_plotting@assays@data@listData[["logcounts"]] <- out_for_plotting@assays@data@listData[["logCPM"]]
+out_for_plotting <- logcounts(out_for_plotting)
+out_for_plotting <- out[markers_for_plotting_10_each_ID,]
+colData(out_for_plotting) <- data.frame(colData(out_for_plotting)) %>%
+dplyr::mutate(Cluster = dplyr::recode_factor(cluster,
+!!!subtypeList)) %>% DataFrame()
+out_for_plotting@assays@data@listData[["logcounts"]] <- out_for_plotting@assays@data@listData[["logCPM"]]
+out_for_plotting %>%
+scDotPlot::scDotPlot(features = factor(rownames(out_for_plotting),markers_for_plotting_10_each_symbol),
+group = "Cluster",
+#block = "Sample",
+scale = TRUE,
+cluster = FALSE,
+exprs_values = "logCPM",
+groupAnno = "Cluster",
+featureAnno = "Marker",
+annoColors = list("Cluster" = colors,
+"Marker" = colors),
+featureLegends = FALSE,
+annoHeight = 0.025,
+annoWidth = 0.1)
+rownames(out_for_plotting) <- markers_for_plotting_10_each_symbol
+out_for_plotting %>%
+scDotPlot::scDotPlot(features = factor(rownames(out_for_plotting),markers_for_plotting_10_each_symbol),
+group = "Cluster",
+#block = "Sample",
+scale = TRUE,
+cluster = FALSE,
+exprs_values = "logCPM",
+groupAnno = "Cluster",
+featureAnno = "Marker",
+annoColors = list("Cluster" = colors,
+"Marker" = colors),
+featureLegends = FALSE,
+annoHeight = 0.025,
+annoWidth = 0.1)
+rowData(out_for_plotting)$Marker <- features[match(rownames(out_for_plotting), features)] |>
+names() %>%
+factor(levels = unlist(subtypeList))
+out_for_plotting %>%
+scDotPlot::scDotPlot(features = factor(rownames(out_for_plotting),markers_for_plotting_10_each_symbol),
+group = "Cluster",
+#block = "Sample",
+scale = TRUE,
+cluster = FALSE,
+exprs_values = "logCPM",
+groupAnno = "Cluster",
+featureAnno = "Marker",
+annoColors = list("Cluster" = colors,
+"Marker" = colors),
+featureLegends = FALSE,
+annoHeight = 0.025,
+annoWidth = 0.1)
+out_for_plotting %>%
+scDotPlot::scDotPlot(features = factor(rownames(out_for_plotting),markers_for_plotting_10_each_symbol),
+group = "Cluster",
+#block = "Sample",
+scale = TRUE,
+cluster = FALSE,
+exprs_values = "logCPM",
+groupAnno = "Cluster",
+featureAnno = "Marker",
+annoColors = list("Cluster" = colors,
+"Marker" = colors),
+featureLegends = FALSE,
+annoHeight = 0.025,
+annoWidth = 0.1,flipPlot=T)
+out <- readRDS("~/Downloads/aggregated_cells.AD_MS_PD.070724.donorIdUnique_and_cluster.rds")
+out_for_plotting <- out[markers_for_plotting_10_each_ID,]
+out <- readRDS("~/Downloads/aggregated_cells.AD_MS_PD.070724.DonoruniqueID_and_cluster.SE.rds")
+out_for_plotting <- out[markers_for_plotting_10_each_ID,]
+out_for_plotting$clusters_0.5 <- clusters$membership
+colData(out_for_plotting) <- data.frame(colData(out_for_plotting)) %>%
+dplyr::mutate(Cluster = dplyr::recode_factor(cluster,
+!!!subtypeList)) %>% DataFrame()
+rowData(out_for_plotting)$Marker <- features[match(rownames(out_for_plotting), features)] |>
+names() %>%
+factor(levels = unlist(subtypeList))
+colors <- c(adjustcolor('#31a354', alpha.f = 0.9), '#8856a7',
+adjustcolor('#fa9fb5', 0.9),  '#2b8cbe',
+adjustcolor('#fec44f', alpha.f = 0.9),
+adjustcolor('#c51b8a', 0.9),
+adjustcolor('#d95f0e', alpha.f = 0.9),
+adjustcolor('turquoise1', alpha.f = 0.9))
+plotDots(out_for_plotting, factor(rownames(out_for_plotting),markers_for_plotting_10_each_symbol),
+group="clusters_0.5", scale=TRUE, center=TRUE) + xlab("Cluster") +
+theme_classic() +
+theme(axis.text.x = element_text(color = "black"), axis.text.y = element_text(colour="black", size = 5.5), axis.ticks.x  = element_blank()) + ylab("Cluster markers")
+plotDots(out_for_plotting, factor(rownames(out_for_plotting),markers_for_plotting_10_each_symbol),
+group="Cluster", scale=TRUE, center=TRUE) + xlab("Cluster") +
+theme_classic() +
+theme(axis.text.x = element_text(color = "black"), axis.text.y = element_text(colour="black", size = 5.5), axis.ticks.x  = element_blank()) + ylab("Cluster markers")
+rownames(out_for_plotting)
+rownames(out_for_plotting) <- markers_for_plotting_10_each_symbol
+plotDots(out_for_plotting, factor(rownames(out_for_plotting),markers_for_plotting_10_each_symbol),
+group="Cluster", scale=TRUE, center=TRUE) + xlab("Cluster") +
+theme_classic() +
+theme(axis.text.x = element_text(color = "black"), axis.text.y = element_text(colour="black", size = 5.5), axis.ticks.x  = element_blank()) + ylab("Cluster markers")
+?plotDots
+RColorBrewer::brewer.pal(3,"RdYlBu")
+out_for_plotting %>%
+scDotPlot::scDotPlot(features = features,
+group = "Cluster",
+#block = "Sample",
+scale = TRUE,
+cluster = FALSE,
+groupAnno = "Cluster",
+featureAnno = "Marker",
+annoColors = list("Cluster" = colors,
+"Marker" = colors),
+featureLegends = FALSE,
+annoHeight = 0.025,
+annoWidth = 0.1,
+dotColors=c("#FC8D59", "#FFFFBF", "#91BFDB"))
+rowData(out_for_plotting)$Marker <- features[match(rownames(out_for_plotting), features)] |>
+names() %>%
+factor(levels = unlist(subtypeList))
+colors <- c(adjustcolor('#31a354', alpha.f = 0.9), '#8856a7',
+adjustcolor('#fa9fb5', 0.9),  '#2b8cbe',
+adjustcolor('#fec44f', alpha.f = 0.9),
+adjustcolor('#c51b8a', 0.9),
+adjustcolor('#d95f0e', alpha.f = 0.9),
+adjustcolor('turquoise1', alpha.f = 0.9))
+rownames(out_for_plotting) <- markers_for_plotting_10_each_symbol
+out_for_plotting %>%
+scDotPlot::scDotPlot(features = features,
+group = "Cluster",
+#block = "Sample",
+scale = TRUE,
+cluster = FALSE,
+groupAnno = "Cluster",
+featureAnno = "Marker",
+annoColors = list("Cluster" = colors,
+"Marker" = colors),
+featureLegends = FALSE,
+annoHeight = 0.025,
+annoWidth = 0.1,
+dotColors=c("#FC8D59", "#FFFFBF", "#91BFDB"))
+View(out_for_plotting)
+features
+out_for_plotting %>%
+scDotPlot::scDotPlot(features = factor(rownames(out_for_plotting),markers_for_plotting_10_each_symbol),
+group = "Cluster",
+#block = "Sample",
+scale = TRUE,
+cluster = FALSE,
+groupAnno = "Cluster",
+featureAnno = "Marker",
+annoColors = list("Cluster" = colors,
+"Marker" = colors),
+featureLegends = FALSE,
+annoHeight = 0.025,
+annoWidth = 0.1,
+dotColors=c("#FC8D59", "#FFFFBF", "#91BFDB"))
+# Load Data ====================================================================
+dir <- "~/Documents/AstrocytePaper"
+data <- readRDS(file.path(dir,"Astrocyteintegration_AmbientRemoved_filtered_noneuron.RDS"))
+# D. Abundance Plots ===========================================================
+library(edgeR)
+library(RColorBrewer)
+library(viridis)
+# E. Markers Dot Plot ==========================================================
+counts <- round(GetAssayData(data, slot="counts", assay="RNA"))
+counts <- initializeSparseMatrix(counts)
+lognorm <- logNormCounts.chan(counts,batch = data$StudyID)
+markers <- scoreMarkers.chan(lognorm,
+groups=data$finalClusters, batch=data$StudyID,lfc=0)
+library(scran.chan)
+source("~/Documents/scHelpers.R")
+counts <- initializeSparseMatrix(counts)
+lognorm <- logNormCounts.chan(counts,batch = data$StudyID)
+markers <- scoreMarkers.chan(lognorm,
+groups=data$finalClusters, batch=data$StudyID,lfc=0)
+# Get top 5 markers from each cluster
+topmarkers <- c()
+for (cluster in 1:length(markers$statistics)) {
+clustermarkers <- data.frame(markers$statistics[[cluster]])
+clustermarkers <- clustermarkers[order(clustermarkers$logFC,decreasing = TRUE),]
+top <- rownames(clustermarkers)[1:5]
+topmarkers <- c(topmarkers,top)
+}
+topmarkers[5] <- "Nrxn1"
+topmarkers[9:10] <- c("Id4","Clu")
+library(clusterProfiler)
+GoPlots <- list()
+gcSample <- list()
+for (cluster in 1:length(markers$statistics)) {
+clustermarkers <- data.frame(markers$statistics[[cluster]])
+clustermarkers <- clustermarkers[order(clustermarkers$logFC,decreasing = TRUE),]
+geneList <- as.numeric(clustermarkers$logFC[which(clustermarkers$logFC > 0)])
+names(geneList) <- rownames(clustermarkers[which(clustermarkers$logFC > 0),])
+gene.df <- bitr( names(geneList), fromType = "SYMBOL",
+toType = c("ENSEMBL", "ENTREZID"),
+OrgDb = org.Mm.eg.db::org.Mm.eg.db)
+x <- match(gene.df$SYMBOL,names(geneList))
+geneList1 <- geneList[x]
+names(geneList1) <- gene.df$ENTREZID
+gcSample[[paste0("Cluster_",cluster)]] <- geneList1
+}
+ck.kegg <- compareCluster(geneClusters = gcSample, fun = "gseKEGG",
+organism = "mmu",nPermSimple = 10000,scoreType = "pos")
+ck.GO <- compareCluster(geneClusters = gcSample, fun = "gseGO",nPermSimple = 10000,
+OrgDb = org.Mm.eg.db::org.Mm.eg.db,ont="BP",scoreType = "pos",eps=0)
+for(name in names(gcSample)){
+go <- gseKEGG(gcSample[[name]],organism = "mmu",nPermSimple = 10000,scoreType = "pos")
+write.csv(data.frame(go@result),file = file.path(dir,"Figure2",paste0(name,"_KEGGresult.csv")))
+}
+# E. Markers Dot Plot ==========================================================
+subtypeList <- list("1" = "Homeostatic",
+"2" = "DAA1",
+"3" = "DAA2",
+"4" = "Synapse")
+sce <- data %>%
+Seurat::as.SingleCellExperiment()
+colData(sce) <- data.frame(colData(sce)) %>%
+dplyr::mutate(Cluster = dplyr::recode_factor(finalClusters,
+!!!subtypeList)) %>% DataFrame()
+features <- c("Nrxn3", "Nrg3", "Nkain2", "Dlg2", "Meg3", "mt-Co3", "Aldoc", "Mt1",
+"Apoe", "Cst3", "Clu", "Id4", "Mt2", "Id3", "Gfap", "Nrxn1", "Wdr17",
+"Ntm", "Lsamp", "Gpc5") %>%
+purrr::set_names(rep(rev(subtypeList), each = 5))
+rowData(sce)$Marker <- features[match(rownames(sce), features)] |>
+names() %>%
+factor(levels = unlist(subtypeList))
+sce %>%
+scDotPlot::scDotPlot(features = features,
+group = "Cluster",
+#block = "Sample",
+scale = TRUE,
+cluster = FALSE,
+groupAnno = "Cluster",
+featureAnno = "Marker",
+annoColors = list("Cluster" = c("dodgerblue", "goldenrod1",
+"red", "darkgreen"),
+"Marker" = c("dodgerblue", "goldenrod1",
+"red", "darkgreen")),
+featureLegends = FALSE,
+annoHeight = 0.025,
+annoWidth = 0.1,fontSize = 14,
+dotColors=c("#FC8D59", "#FFFFBF", "#91BFDB"))
+sce %>%
+scDotPlot::scDotPlot(features = features,
+group = "Cluster",
+#block = "Sample",
+scale = TRUE,
+cluster = FALSE,
+groupAnno = "Cluster",
+featureAnno = "Marker",
+annoColors = list("Cluster" = c("dodgerblue", "goldenrod1",
+"red", "darkgreen"),
+"Marker" = c("dodgerblue", "goldenrod1",
+"red", "darkgreen")),
+featureLegends = FALSE,
+annoHeight = 0.025,
+annoWidth = 0.1,fontSize = 14,
+dotColors=c( "#91BFDB","#FFFFBF", "#FC8D59"))
+sce %>%
+scDotPlot::scDotPlot(features = features,
+group = "Cluster",
+#block = "Sample",
+scale = TRUE,
+cluster = FALSE,
+groupAnno = "Cluster",
+featureAnno = "Marker",
+annoColors = list("Cluster" = c("dodgerblue", "goldenrod1",
+"red", "darkgreen"),
+"Marker" = c("dodgerblue", "goldenrod1",
+"red", "darkgreen")),
+featureLegends = FALSE,
+annoHeight = 0.025,
+annoWidth = 0.1,fontSize = 14,
+dotColors=c( "#91BFDB","#FFFFBF", "red"))
+sce %>%
+scDotPlot::scDotPlot(features = features,
+group = "Cluster",
+#block = "Sample",
+scale = TRUE,
+cluster = FALSE,
+groupAnno = "Cluster",
+featureAnno = "Marker",
+annoColors = list("Cluster" = c("dodgerblue", "goldenrod1",
+"red", "darkgreen"),
+"Marker" = c("dodgerblue", "goldenrod1",
+"red", "darkgreen")),
+featureLegends = FALSE,
+annoHeight = 0.025,
+annoWidth = 0.1,fontSize = 14,
+dotColors=c( "darkblue","#FFFFBF", "red"))
+sce %>%
+scDotPlot::scDotPlot(features = features,
+group = "Cluster",
+#block = "Sample",
+scale = TRUE,
+cluster = FALSE,
+groupAnno = "Cluster",
+featureAnno = "Marker",
+annoColors = list("Cluster" = c("dodgerblue", "goldenrod1",
+"red", "darkgreen"),
+"Marker" = c("dodgerblue", "goldenrod1",
+"red", "darkgreen")),
+featureLegends = FALSE,
+annoHeight = 0.025,
+annoWidth = 0.1,fontSize = 14,
+dotColors=c( "mediumblue","#FFFFBF", "red"))
+sce %>%
+scDotPlot::scDotPlot(features = features,
+group = "Cluster",
+#block = "Sample",
+scale = TRUE,
+cluster = FALSE,
+groupAnno = "Cluster",
+featureAnno = "Marker",
+annoColors = list("Cluster" = c("dodgerblue", "goldenrod1",
+"red", "darkgreen"),
+"Marker" = c("dodgerblue", "goldenrod1",
+"red", "darkgreen")),
+featureLegends = FALSE,
+annoHeight = 0.025,
+annoWidth = 0.1,fontSize = 14,
+dotColors=c( "blue","#FFFFBF", "red"))
+pdf(file.path(dir,"Figure2","C_Updataed_DotPlotMarkers.pdf"))
+sce %>%
+scDotPlot::scDotPlot(features = features,
+group = "Cluster",
+#block = "Sample",
+scale = TRUE,
+cluster = FALSE,
+groupAnno = "Cluster",
+featureAnno = "Marker",
+annoColors = list("Cluster" = c("dodgerblue", "goldenrod1",
+"red", "darkgreen"),
+"Marker" = c("dodgerblue", "goldenrod1",
+"red", "darkgreen")),
+featureLegends = FALSE,
+annoHeight = 0.025,
+annoWidth = 0.1,fontSize = 14,
+dotColors=c( "blue","#FFFFBF", "red"))
+dev.off()
+# C. Plot AD Comparison Plots ------------------
+enrichPaths<- readRDS("/gstore/data/astroMetaAnalysis/neurodegeneration_meta-analysis/Rscripts/Mouse_HumanComparison/ADComparisonPathways.rds")
+topPaths <- lapply(enrichPaths,function(x){
+data<- x@result
+data <- data[order(data$p.adjust),]
+})
+library(dplyr)
+library(ggplot2)
+topPaths <- lapply(enrichPaths,function(x){
+data<- x@result
+data <- data[order(data$p.adjust),]
+})
+# C. Plot AD Comparison Plots ------------------
+enrichPaths<- readRDS("/gstore/data/astroMetaAnalysis/neurodegeneration_meta-analysis/Rscripts/Mouse_HumanComparison/ADComparisonPathways.rds")

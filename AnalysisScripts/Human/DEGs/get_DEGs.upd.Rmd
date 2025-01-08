@@ -1,0 +1,538 @@
+---
+title: "Get_DEGs"
+output: html_document
+date: "2024-07-08"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(dplyr)
+library(gp.sa.diff)
+library(gp.sa.solo)
+library(SingleCellExperiment)
+library(edgeR)
+```
+Load the aggregated file with Cain donor #s reduced to tru case/controls only; check for updated file in get_DEGs.Rmd
+
+```{r}
+
+se_agg <-  readRDS("aggregated_cells.AD_MS_PD.070724.DonoruniqueID.Cain_subset_AD_controls.SE.rds")
+```
+
+
+AD differential expression
+
+```{r}
+
+res_ad <- list()
+
+### Let's run DE for all datasets except the ones that have internal batches - marabito & cain
+
+studies_full <- unique(se_agg[,se_agg$diagnosis_harmonized == "AD"]$studybatch)
+
+## cain, morabito have batches
+
+studies <- studies_full[!studies_full %in% c("cain","morabito")]
+
+for (i in 1:length(studies)) {
+  study <- studies[i]
+   out_tmp <- gp.sa.diff::runVoom(se_agg, groups="diagnosis_harmonized", comparisons=list(c("AD", "Control")), subset.factor="studybatch",
+    subset.levels=c(study), commit="never")
+
+   out_final <- as.data.frame(out_tmp[[1]]) %>% mutate(symbol = rowData(se_agg)$symbol)
+
+   res_ad[[i]] <- out_final
+}
+
+
+out_cain <- as.data.frame(runVoom(se_agg[,se_agg$studybatch == "cain"], groups="diagnosis_harmonized", comparisons=list(c("AD", "Control")), commit="never")[[1]]) %>% mutate(symbol = rowData(se_agg)$symbol) ### didn't include the batch 
+
+out_morabito <- as.data.frame(runVoom(se_agg[,se_agg$studybatch == "morabito"], groups="diagnosis_harmonized", comparisons=list(c("AD", "Control")), block = "batch", commit="never")[[1]]) %>% mutate(symbol = rowData(se_agg)$symbol)
+
+n <- length(studies)
+res_ad[[n+1]] <- out_cain
+res_ad[[n+2]] <- out_morabito
+names(res_ad) = c(studies,"cain","morabito")
+
+
+res <- res_ad
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCh38/GRCh38.IGIS4.0.genes.rds@REVISION-3"))
+
+fc <- matrix(0, ncol=length(res), nrow=dim(feat)[1])
+rownames(fc) <- feat$ID
+
+pval <- matrix(NA, ncol=length(res), nrow=dim(feat)[1])
+rownames(pval) <- feat$ID
+
+mexp <- matrix(NA, ncol=length(res), nrow=dim(feat)[1])
+rownames(mexp) <- feat$ID
+
+sefc <- matrix(NA, ncol=length(res), nrow=dim(feat)[1])
+rownames(sefc) <- feat$ID
+
+for(i in 1:length(res)){
+        m<-match(rownames(fc), rownames(res[[i]]))
+        f.a=!is.na(m)
+        f.b=m[f.a]
+        fc[f.a,i] <- res[[i]][f.b,"LogFC"]
+        pval[f.a,i] <- res[[i]][f.b,"PValue"]
+        mexp[f.a,i] <- res[[i]][f.b,"AveExpr"]
+        sefc[f.a,i] <- res[[i]][f.b,"LogFC"]/res[[i]][f.b,"t"]
+}
+
+x<-strsplit(names(res),".", fixed=T)
+x2 <- sapply(x, function(x) purrr::pluck(x,1))
+colnames(pval) = x2
+colnames(fc) = x2
+colnames(mexp) = x2
+colnames(sefc) = x2
+
+
+deg_master <- list(pval=pval, fc=fc, se_fc=sefc, mean_exp=mexp)
+
+
+y <- strsplit(colnames(deg_master$pval), "_", fixed = T)
+
+y2 <- lapply(y, function(x)
+  purrr::pluck(x, 2))
+
+res <- vector("list", length = 1)
+
+
+f <- colnames(deg_master$pval)
+pval <- deg_master$pval[, f]
+fc <- deg_master$fc[, f]
+mexp <- deg_master$mean_exp[, f]
+sefc <- cbind(fc,deg_master$se_fc[,f])
+
+pval_up <- pval * 0
+pval_down <- pval * 0
+
+for (i in 1:dim(fc)[2]) {
+    f1 <- which(fc[, i] > 0)
+    f2 <- which(fc[, i] < 0)
+    pval_up[f1, i] <- pval[f1, i] * 0.5
+    pval_up[f2, i] <- 1 - (pval[f2, i] * 0.5)
+    pval_down[f1, i] <- 1 - (pval[f1, i] * 0.5)
+    pval_down[f2, i] <- pval[f2, i] * 0.5
+
+  }
+
+#library(metafor)
+library(metap)
+
+meta_up <- suppressWarnings(apply(pval_up, 1, function(y) sumlog(y[!is.na(y)])$p))
+meta_down <- suppressWarnings(apply(pval_down, 1, function(y) sumlog(y[!is.na(y)])$p))
+mean_fc <- rowMeans(fc, na.rm = T)
+mean_exp <- rowMeans(mexp, na.rm = T)
+
+n_studies <- length(studies_full)
+
+f_se_fc <- apply(sefc[,1:n_studies],1,function(x) sum(!is.na(x))>=2)
+f_se_se <- apply(sefc[,(n_studies+1):(n_studies*2)],1,function(x) sum(!is.na(x))>2)
+f_se <- f_se_fc & f_se_se
+
+dsl_res <- apply(sefc[f_se,], 1, function(row) metafor::rma(yi=as.vector(row[1:n_studies]),vi=as.vector(row[(n_studies+1):(n_studies*2)]),method="DL"))
+
+betas <- sapply(dsl_res,function(x) purrr::pluck(x,"beta"))
+ses <- sapply(dsl_res,function(x) purrr::pluck(x,"se"))
+dl_ps <- sapply(dsl_res,function(x) purrr::pluck(x,"pval"))
+dl_ps <- sapply(dsl_res,function(x) purrr::pluck(x,"pval"))
+
+dl_sub <- data.frame(ID=rownames(sefc)[f_se],beta=betas,se=ses,pval=dl_ps)
+
+dl_all <- data.frame(ID=rownames(sefc))
+dl_all <- left_join(dl_all,dl_sub[,c("ID","beta","se","pval")],by=c("ID"="ID"))
+
+  temp <-
+    data.frame(
+      ID = names(meta_up),
+      AveExpr = as.numeric(mean_exp),
+      PValue = dl_all$pval,
+      FDR = p.adjust(dl_all$pval,method="BH"),
+      LogFC = as.numeric(mean_fc),
+      dl_mu = dl_all$beta,
+      dl_s = dl_all$se,
+      metap_up = meta_up,
+      metap_down = meta_down,
+      adj_metap_up = p.adjust(meta_up, method = "BH"),
+      adj_metap_down = p.adjust(meta_down, method = "BH"),
+      n_tested = apply(pval_up, 1, function(y)
+        sum(!is.na(y))),
+      n_up = apply(fc, 1, function(y)
+        sum(y > 0, na.rm = T)),
+      n_down = apply(fc, 1, function(y)
+        sum(y < 0, na.rm = T))
+    )
+
+  temp <- left_join(temp, feat, by = c("ID" = "ID"))
+  ord <- order(temp$metap_up)
+
+  temp <- temp[ord, ]
+  x <-
+    c(
+      "ID",
+      "symbol",
+      "AveExpr",
+      "PValue",
+      "FDR",
+      "LogFC",
+      "dl_mu",
+      "dl_s",
+      "metap_up",
+      "metap_down",
+      "adj_metap_up",
+      "adj_metap_down",
+      "n_tested",
+      "n_up",
+      "n_down",
+      "symbol"
+    )
+
+res_dsl <- temp %>% dplyr::select(x)
+
+saveRDS(res_dsl, "/gstore/scratch/u/novikovg/Astrocytes_meta/AD_MS_PD_cellbender_harmony_2024/harmony_integration/another_run_after_removing_high_mito_clusters/DEGs/res_dsl.AD.cain_fixed.072924.rds")
+
+```
+
+PD differential expression
+
+
+```{r}
+
+res_pd <- list()
+
+### Let's run DE for all datasets except the ones that have internal batches - marabito & cain
+
+studies <- unique(se_agg[,se_agg$diagnosis_harmonized == "PD"]$studybatch)
+
+for (i in 1:length(studies)) {
+  study <- studies[i]
+   out_tmp <- gp.sa.diff::runVoom(se_agg, groups="diagnosis_harmonized", comparisons=list(c("PD", "Control")), subset.factor="studybatch",
+    subset.levels=c(study), commit="never")
+
+   out_final <- as.data.frame(out_tmp[[1]]) %>% mutate(symbol = rowData(se_agg)$symbol)
+
+   res_pd[[i]] <- out_final
+}
+
+names(res_pd) = studies
+
+
+res <- res_pd
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCh38/GRCh38.IGIS4.0.genes.rds@REVISION-3"))
+
+fc <- matrix(0, ncol=length(res), nrow=dim(feat)[1])
+rownames(fc) <- feat$ID
+
+pval <- matrix(NA, ncol=length(res), nrow=dim(feat)[1])
+rownames(pval) <- feat$ID
+
+mexp <- matrix(NA, ncol=length(res), nrow=dim(feat)[1])
+rownames(mexp) <- feat$ID
+
+sefc <- matrix(NA, ncol=length(res), nrow=dim(feat)[1])
+rownames(sefc) <- feat$ID
+
+for(i in 1:length(res)){
+        m<-match(rownames(fc), rownames(res[[i]]))
+        f.a=!is.na(m)
+        f.b=m[f.a]
+        fc[f.a,i] <- res[[i]][f.b,"LogFC"]
+        pval[f.a,i] <- res[[i]][f.b,"PValue"]
+        mexp[f.a,i] <- res[[i]][f.b,"AveExpr"]
+        sefc[f.a,i] <- res[[i]][f.b,"LogFC"]/res[[i]][f.b,"t"]
+}
+
+x<-strsplit(names(res),".", fixed=T)
+x2 <- sapply(x, function(x) purrr::pluck(x,1))
+colnames(pval) = x2
+colnames(fc) = x2
+colnames(mexp) = x2
+colnames(sefc) = x2
+
+
+deg_master <- list(pval=pval, fc=fc, se_fc=sefc, mean_exp=mexp)
+
+
+y <- strsplit(colnames(deg_master$pval), "_", fixed = T)
+
+y2 <- lapply(y, function(x)
+  purrr::pluck(x, 2))
+
+res <- vector("list", length = 1)
+
+
+f <- colnames(deg_master$pval)
+pval <- deg_master$pval[, f]
+fc <- deg_master$fc[, f]
+mexp <- deg_master$mean_exp[, f]
+sefc <- cbind(fc,deg_master$se_fc[,f])
+
+pval_up <- pval * 0
+pval_down <- pval * 0
+
+for (i in 1:dim(fc)[2]) {
+    f1 <- which(fc[, i] > 0)
+    f2 <- which(fc[, i] < 0)
+    pval_up[f1, i] <- pval[f1, i] * 0.5
+    pval_up[f2, i] <- 1 - (pval[f2, i] * 0.5)
+    pval_down[f1, i] <- 1 - (pval[f1, i] * 0.5)
+    pval_down[f2, i] <- pval[f2, i] * 0.5
+
+  }
+
+
+meta_up <- suppressWarnings(apply(pval_up, 1, function(y) sumlog(y[!is.na(y)])$p))
+meta_down <- suppressWarnings(apply(pval_down, 1, function(y) sumlog(y[!is.na(y)])$p))
+mean_fc <- rowMeans(fc, na.rm = T)
+mean_exp <- rowMeans(mexp, na.rm = T)
+
+n_studies <- length(studies)
+
+f_se_fc <- apply(sefc[,1:n_studies],1,function(x) sum(!is.na(x))>=2)
+f_se_se <- apply(sefc[,(n_studies+1):(n_studies*2)],1,function(x) sum(!is.na(x))>2)
+f_se <- f_se_fc & f_se_se
+
+dsl_res <- apply(sefc[f_se,], 1, function(row) metafor::rma(yi=as.vector(row[1:n_studies]),vi=as.vector(row[(n_studies+1):(n_studies*2)]),method="DL"))
+
+betas <- sapply(dsl_res,function(x) purrr::pluck(x,"beta"))
+ses <- sapply(dsl_res,function(x) purrr::pluck(x,"se"))
+dl_ps <- sapply(dsl_res,function(x) purrr::pluck(x,"pval"))
+dl_ps <- sapply(dsl_res,function(x) purrr::pluck(x,"pval"))
+
+dl_sub <- data.frame(ID=rownames(sefc)[f_se],beta=betas,se=ses,pval=dl_ps)
+
+dl_all <- data.frame(ID=rownames(sefc))
+dl_all <- left_join(dl_all,dl_sub[,c("ID","beta","se","pval")],by=c("ID"="ID"))
+
+  temp <-
+    data.frame(
+      ID = names(meta_up),
+      AveExpr = as.numeric(mean_exp),
+      PValue = dl_all$pval,
+      FDR = p.adjust(dl_all$pval,method="BH"),
+      LogFC = as.numeric(mean_fc),
+      dl_mu = dl_all$beta,
+      dl_s = dl_all$se,
+      metap_up = meta_up,
+      metap_down = meta_down,
+      adj_metap_up = p.adjust(meta_up, method = "BH"),
+      adj_metap_down = p.adjust(meta_down, method = "BH"),
+      n_tested = apply(pval_up, 1, function(y)
+        sum(!is.na(y))),
+      n_up = apply(fc, 1, function(y)
+        sum(y > 0, na.rm = T)),
+      n_down = apply(fc, 1, function(y)
+        sum(y < 0, na.rm = T))
+    )
+
+  temp <- left_join(temp, feat, by = c("ID" = "ID"))
+  ord <- order(temp$metap_up)
+
+  temp <- temp[ord, ]
+  x <-
+    c(
+      "ID",
+      "symbol",
+      "AveExpr",
+      "PValue",
+      "FDR",
+      "LogFC",
+      "dl_mu",
+      "dl_s",
+      "metap_up",
+      "metap_down",
+      "adj_metap_up",
+      "adj_metap_down",
+      "n_tested",
+      "n_up",
+      "n_down",
+      "symbol"
+    )
+
+res_dsl <- temp %>% dplyr::select(x)
+
+saveRDS(res_dsl, "/gstore/scratch/u/novikovg/Astrocytes_meta/AD_MS_PD_cellbender_harmony_2024/harmony_integration/another_run_after_removing_high_mito_clusters/DEGs/res_dsl.PD.072924.rds")
+
+```
+
+MS differential expression
+
+
+```{r}
+
+res_ms <- list()
+
+### Let's run DE for all datasets except the ones that have internal batches - marabito & cain
+
+studies <- unique(se_agg[,se_agg$diagnosis_harmonized == "MS"]$studybatch)
+
+for (i in 1:length(studies)) {
+  study <- studies[i]
+   out_tmp <- gp.sa.diff::runVoom(se_agg, groups="diagnosis_harmonized", comparisons=list(c("MS", "Control")), subset.factor="studybatch",
+    subset.levels=c(study), commit="never")
+
+   out_final <- as.data.frame(out_tmp[[1]]) %>% mutate(symbol = rowData(se_agg)$symbol)
+
+   res_ms[[i]] <- out_final
+}
+
+names(res_ms) = studies
+
+
+res <- res_ms
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCh38/GRCh38.IGIS4.0.genes.rds@REVISION-3"))
+
+fc <- matrix(0, ncol=length(res), nrow=dim(feat)[1])
+rownames(fc) <- feat$ID
+
+pval <- matrix(NA, ncol=length(res), nrow=dim(feat)[1])
+rownames(pval) <- feat$ID
+
+mexp <- matrix(NA, ncol=length(res), nrow=dim(feat)[1])
+rownames(mexp) <- feat$ID
+
+sefc <- matrix(NA, ncol=length(res), nrow=dim(feat)[1])
+rownames(sefc) <- feat$ID
+
+for(i in 1:length(res)){
+        m<-match(rownames(fc), rownames(res[[i]]))
+        f.a=!is.na(m)
+        f.b=m[f.a]
+        fc[f.a,i] <- res[[i]][f.b,"LogFC"]
+        pval[f.a,i] <- res[[i]][f.b,"PValue"]
+        mexp[f.a,i] <- res[[i]][f.b,"AveExpr"]
+        sefc[f.a,i] <- res[[i]][f.b,"LogFC"]/res[[i]][f.b,"t"]
+}
+
+x<-strsplit(names(res),".", fixed=T)
+x2 <- sapply(x, function(x) purrr::pluck(x,1))
+colnames(pval) = x2
+colnames(fc) = x2
+colnames(mexp) = x2
+colnames(sefc) = x2
+
+
+deg_master <- list(pval=pval, fc=fc, se_fc=sefc, mean_exp=mexp)
+
+
+y <- strsplit(colnames(deg_master$pval), "_", fixed = T)
+
+y2 <- lapply(y, function(x)
+  purrr::pluck(x, 2))
+
+res <- vector("list", length = 1)
+
+
+f <- colnames(deg_master$pval)
+pval <- deg_master$pval[, f]
+fc <- deg_master$fc[, f]
+mexp <- deg_master$mean_exp[, f]
+sefc <- cbind(fc,deg_master$se_fc[,f])
+
+pval_up <- pval * 0
+pval_down <- pval * 0
+
+for (i in 1:dim(fc)[2]) {
+    f1 <- which(fc[, i] > 0)
+    f2 <- which(fc[, i] < 0)
+    pval_up[f1, i] <- pval[f1, i] * 0.5
+    pval_up[f2, i] <- 1 - (pval[f2, i] * 0.5)
+    pval_down[f1, i] <- 1 - (pval[f1, i] * 0.5)
+    pval_down[f2, i] <- pval[f2, i] * 0.5
+
+  }
+
+library(metap)
+meta_up <- suppressWarnings(apply(pval_up, 1, function(y) sumlog(y[!is.na(y)])$p))
+meta_down <- suppressWarnings(apply(pval_down, 1, function(y) sumlog(y[!is.na(y)])$p))
+mean_fc <- rowMeans(fc, na.rm = T)
+mean_exp <- rowMeans(mexp, na.rm = T)
+
+n_studies <- length(studies)
+
+f_se_fc <- apply(sefc[,1:n_studies],1,function(x) sum(!is.na(x))>=2)
+f_se_se <- apply(sefc[,(n_studies+1):(n_studies*2)],1,function(x) sum(!is.na(x))>2)
+f_se <- f_se_fc & f_se_se
+
+dsl_res <- apply(sefc[f_se,], 1, function(row) metafor::rma(yi=as.vector(row[1:n_studies]),vi=as.vector(row[(n_studies+1):(n_studies*2)]),method="DL"))
+
+betas <- sapply(dsl_res,function(x) purrr::pluck(x,"beta"))
+ses <- sapply(dsl_res,function(x) purrr::pluck(x,"se"))
+dl_ps <- sapply(dsl_res,function(x) purrr::pluck(x,"pval"))
+dl_ps <- sapply(dsl_res,function(x) purrr::pluck(x,"pval"))
+
+dl_sub <- data.frame(ID=rownames(sefc)[f_se],beta=betas,se=ses,pval=dl_ps)
+
+dl_all <- data.frame(ID=rownames(sefc))
+dl_all <- left_join(dl_all,dl_sub[,c("ID","beta","se","pval")],by=c("ID"="ID"))
+
+  temp <-
+    data.frame(
+      ID = names(meta_up),
+      AveExpr = as.numeric(mean_exp),
+      PValue = dl_all$pval,
+      FDR = p.adjust(dl_all$pval,method="BH"),
+      LogFC = as.numeric(mean_fc),
+      dl_mu = dl_all$beta,
+      dl_s = dl_all$se,
+      metap_up = meta_up,
+      metap_down = meta_down,
+      adj_metap_up = p.adjust(meta_up, method = "BH"),
+      adj_metap_down = p.adjust(meta_down, method = "BH"),
+      n_tested = apply(pval_up, 1, function(y)
+        sum(!is.na(y))),
+      n_up = apply(fc, 1, function(y)
+        sum(y > 0, na.rm = T)),
+      n_down = apply(fc, 1, function(y)
+        sum(y < 0, na.rm = T))
+    )
+
+  temp <- left_join(temp, feat, by = c("ID" = "ID"))
+  ord <- order(temp$metap_up)
+
+  temp <- temp[ord, ]
+  x <-
+    c(
+      "ID",
+      "symbol",
+      "AveExpr",
+      "PValue",
+      "FDR",
+      "LogFC",
+      "dl_mu",
+      "dl_s",
+      "metap_up",
+      "metap_down",
+      "adj_metap_up",
+      "adj_metap_down",
+      "n_tested",
+      "n_up",
+      "n_down",
+      "symbol"
+    )
+
+res_dsl <- temp %>% dplyr::select(x)
+
+saveRDS(res_dsl, "/gstore/scratch/u/novikovg/Astrocytes_meta/AD_MS_PD_cellbender_harmony_2024/harmony_integration/another_run_after_removing_high_mito_clusters/DEGs/res_dsl.MS.080124.rds")
+
+```
+
+4-ways between diseases
+
+```{r}
+
+
+
+
+```
+
+

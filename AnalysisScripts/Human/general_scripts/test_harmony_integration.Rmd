@@ -1,0 +1,331 @@
+---
+title: "test_harmony_integration"
+output: html_document
+date: "2024-04-26"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, root.dir = '/gstore/scratch/u/novikovg/Astrocytes_meta/AD_MS_PD_cellbender_harmony_2024/harmony_integration')
+```
+
+library load
+```{r}
+library(SingleCellExperiment)
+library(dplyr)
+library(batchelor)
+library(scran)
+library(scran.chan)
+
+```
+
+
+
+Read in all of the datasets
+
+```{r}
+path <- "/gstore/data/omni/neuroscience/AD/Astrocytes_AD_MS_PD_meta/AD_MS_PD_cellbender_integration/scbasic_runs_for_all_datasets/"
+
+smajic <- readRDS(paste(path,"DS000015518_Smajic.scbasic_out.only_astrocytes.rds", sep=""))
+absinta <- readRDS(paste(path,"DS000015618_Absinta.scbasic_out.only_astrocytes.rds", sep=""))
+jakel <-  readRDS(paste(path, "DS000015650_Jakel.scbasic_out.only_astrocytes.rds", sep=""))
+schirmer <-  readRDS(paste(path, "DS000015651_Schirmer.scbasic_out.only_astrocytes.rds", sep=""))
+cain <- readRDS(paste(path, "DS000016300_Cain.scbasic_out.only_astrocytes.rds", sep=""))
+morabito <- readRDS(paste(path, "DS000016387_Morabito.scbasic_out.only_astrocytes.rds", sep=""))
+liddelow <- readRDS(paste(path, "DS000016463_Liddelow.scbasic_out.only_astrocytes.rds", sep=""))
+wang <- readRDS(paste(path, "DS000016644_Wang.scbasic_out.only_astrocytes.rds", sep=""))
+gerrits <-  readRDS(paste(path, "DS000016819_Gerrits.scbasic_out.only_astrocytes.rds", sep=""))
+smith <- readRDS(paste(path, "DS000016915_Smith.scbasic_out.only_astrocytes.rds", sep=""))
+```
+
+Below is a test integration run without the following datasets: Bryois, Allen Seattle Brain and Kamath et al
+
+```{r}
+
+all.inputs <- list(smajic, absinta, jakel, schirmer, cain, morabito, liddelow, wang, gerrits, smith)
+
+
+common <- lapply(all.inputs, rownames)
+common <- Reduce(intersect, common)
+print(length(common)) ##58302
+
+all.inputs <- lapply(all.inputs, function(x) x[common,])
+
+### do prevent the error about mismatched rowData
+for (i in 1:length(all.inputs)) {
+  rowData(all.inputs[[i]]) <- NULL
+}
+
+rse <- do.call(combineCols, unname(all.inputs))
+sce_filtered <- as(rse, "SingleCellExperiment")
+
+meta_useful <- c("age","diagnosis_harmonized","batch","sex","studybatch","apoe", "donor")
+colData(sce_filtered) <- colData(sce_filtered)[,meta_useful]
+
+metadata(sce_filtered) <- list()
+assays(sce_filtered) <- list(counts = assays(sce_filtered)[[1]])
+reducedDims(sce_filtered) <- list()
+
+
+donors_to_keep <- names(table(sce_filtered$donor))[as.logical(table(sce_filtered$donor) >= 20)]
+coldata_final <- as.data.frame(colData(sce_filtered))
+cells_to_keep <- rownames(coldata_final %>% dplyr::filter(donor %in% donors_to_keep))
+sce_filtered.more_than_20_cells <- sce_filtered[,cells_to_keep]
+
+out <- multiBatchNorm(sce_filtered.more_than_20_cells, normalize.all = TRUE, batch = sce_filtered.more_than_20_cells$studybatch)
+
+```
+
+Let's get a list of HVGs and generate the object for harmony
+
+```{r}
+
+get_var_genes <- function(se,n_genes) {
+  
+  x <- initializeSparseMatrix(assay(se, 1), num.threads = 7)
+  is.mito <- integer(0)
+  qc.metrics <- perCellQCMetrics.chan(x,subsets = list(mito = is.mito),
+                                    num.threads = 4)
+  qc.filters <- perCellQCFilters.chan(
+    sums = qc.metrics$sums,
+    detected = qc.metrics$detected,
+    subsets = qc.metrics$subsets,
+    nmads = 3)
+  
+  qc.discard <- qc.filters$filters$overall
+  x2 <- filterCells.chan(x, qc.discard)
+  lib.sizes <- qc.metrics$sums[!qc.discard]
+  normed <- logNormCounts.chan(x2, lib.sizes)
+  
+  variances <- modelGeneVar.chan(normed,num.threads = 7)
+  variances <- variances$statistics
+  keep <- rank(-variances$residuals, ties.method = "first") <= n_genes
+  
+  var_genes <- rownames(se)[keep]
+  variances <- -variances$residuals[keep]
+  return(data.frame(var_genes=var_genes, variances=variances))
+}
+
+var_genes_list <- list()
+
+studies <- unique(out$studybatch)
+
+
+for (i in 1:length(studies)) {
+  print(paste("Running var genes for", studies[i], sep=" "))
+  var_genes_list[[i]] <- get_var_genes(out[,out$studybatch==studies[i]],2000)
+}
+
+
+for (i in 1:length(studies)) {
+    colnames(var_genes_list[[i]]) <- c("var_genes", paste("var.", studies[i], sep=""))
+}
+
+
+library(plyr)
+### Combine all together
+
+all_var_genes_combined <- plyr::join_all(var_genes_list, by='var_genes', type='full')
+all_var_genes_combined <- all_var_genes_combined %>% mutate(median_var=rowMeans(all_var_genes_combined[,-1], na.rm = TRUE))
+
+counts_ast_post_clean <- data.frame(gene = all_var_genes_combined$var_genes, Freq = rowSums(! is.na(all_var_genes_combined)) - 2) ### 1 for var_genes and 1 for median_var_column 
+
+all_var_genes_combined_final <- left_join(all_var_genes_combined,counts_ast_post_clean,by=c("var_genes"="gene")) %>% dplyr::filter(var_genes %in% rownames(out))
+
+var_genes_2k_ast_post_clean <- all_var_genes_combined_final %>% arrange(-Freq,median_var) %>% head(2000) %>% dplyr::select(var_genes)
+
+```
+
+Get a PCA to run harmony
+
+```{r}
+A_logcounts <-  as(assays(out)[[2]],  "sparseMatrix")
+
+se_ast_for_pca_post_clean <- SingleCellExperiment(assays = list(logcounts = A_logcounts))
+colData(se_ast_for_pca_post_clean) <- colData(out)
+se_ast_for_pca_post_clean <- se_ast_for_pca_post_clean[var_genes_2k_ast_post_clean$var_genes,]
+
+saveRDS(se_ast_for_pca_post_clean, "/gstore/data/omni/neuroscience/AD/Astrocytes_AD_MS_PD_meta/AD_MS_PD_cellbender_integration/harmony_integration/AD_MS_PD_astrocytes.cellbender_counts.no_allen_bryois_kamath.20cell_filter.onlyHVG_for_PCA.rds")
+
+se_ast_for_pca_post_clean <- fixedPCA(se_ast_for_pca_post_clean)
+
+saveRDS(se_ast_for_pca_post_clean, "/gstore/data/omni/neuroscience/AD/Astrocytes_AD_MS_PD_meta/AD_MS_PD_cellbender_integration/harmony_integration/AD_MS_PD_astrocytes.cellbender_counts.no_allen_bryois_kamath.20cell_filter.onlyHVG_for_PCA.rds")
+```
+
+In previous integrations theta=1.5 worked well, let's use the same here to test 
+
+```{r}
+### theta 1.5
+se_ast_for_pca_post_clean <- RunHarmony(se_ast_for_pca_post_clean, group.by.vars = "studybatch",theta=1.5, reduction.save = "harmony_theta1.5")
+se_ast_for_pca_post_clean <- runUMAP(se_ast_for_pca_post_clean, dimred="harmony_theta1.5",name = "UMAP_theta1.5")
+
+saveRDS(se_ast_for_pca_post_clean, "/gstore/data/omni/neuroscience/AD/Astrocytes_AD_MS_PD_meta/AD_MS_PD_cellbender_integration/harmony_integration/AD_MS_PD_astrocytes.cellbender_counts.no_allen_bryois_kamath.20cell_filter.onlyHVG_for_PCA.with_UMAP.rds")
+
+reducedDims(out) <- reducedDims(se_ast_for_pca_post_clean)
+
+png("/gne/web/dev/apache/htdocs/people/novikovg/Astrocytes_meta/Harmony_AD_MS_PD_integration_2024/UMAP_theta1.5.png", width = 1200, height = 1000, res = 200)
+plotReducedDim(out, dimred = "UMAP_theta1.5")
+dev.off()
+
+### ### theta 1.5 with donor as the variable
+
+se_ast_for_pca_post_clean <- RunHarmony(se_ast_for_pca_post_clean, group.by.vars = "donor",theta=1.5, reduction.save = "harmony_theta1.5_donor")
+se_ast_for_pca_post_clean <- runUMAP(se_ast_for_pca_post_clean, dimred="harmony_theta1.5_donor",name = "UMAP_theta1.5_donor")
+
+```
+
+
+Let's explore theta 1.5; let's see how well the studies are integrated
+
+```{r}
+
+## remove cells that are unlinkely astrocytes, but were not removed through clustering
+
+cells_to_keep <- rownames(as.data.frame(reducedDims(se_ast_for_pca_post_clean)[[3]]) %>% dplyr::filter(V2 < 8))
+
+
+
+get_umap_plot <- function(harmony_coords_final,dataset) {
+  ### can be used for dataset specific plotting, but also for clusters
+  p <- ggplot(data=harmony_coords_final, aes(x=UMAP1, y=UMAP2)) +
+    geom_point(color="grey", size=0.1,alpha = 1) +
+    geom_point(data = harmony_coords_final %>% dplyr::filter((!!sym(dataset))==1), color="darkgreen", size=0.5, alpha=0.5)+
+    theme_classic() + ggtitle(dataset) + theme(plot.title = element_text(hjust = 0.5)) +
+    theme(plot.title = element_text(size = 20, face = "italic"))
+  return(p)
+}
+
+get_harmony_coords <- function(se, harmony_umap_dim) {
+  message(paste(names(reducedDims(se))[harmony_umap_dim]))
+  harmony_coords_final <- reducedDims(se)[[harmony_umap_dim]]
+  colnames(harmony_coords_final) <- c("UMAP1","UMAP2")
+  harmony_coords_final <- as.data.frame(cbind(harmony_coords_final,colData(se)))
+  
+  results <- fastDummies::dummy_cols(se$studybatch)
+  colnames(results) <- unlist(lapply(colnames(results),function(x) strsplit(x,".data_")[[1]][2]))
+  results <- results[,-1]
+  harmony_coords_final <- cbind(harmony_coords_final, results)
+  
+  return(harmony_coords_final)
+  
+}
+
+harmony_coords <- get_harmony_coords(se_ast_for_pca_post_clean[,cells_to_keep],3)
+
+
+list_of_plots <- list()
+
+studies <- unique(se_ast_for_pca_post_clean$studybatch)
+
+for (i in 1:length(studies)) {
+  p <- get_umap_plot(harmony_coords,studies[i])
+  list_of_plots[[i]] <- p
+}
+
+
+png("/gne/web/dev/apache/htdocs/people/novikovg/Astrocytes_meta/Harmony_AD_MS_PD_integration/Studies_UMAP.theta_1.5.png",width = 4500, height = 2000, res = 250)
+do.call("grid.arrange", c(list_of_plots, ncol=8))
+dev.off()
+```
+
+
+Test with all datasets
+
+
+```{r}
+library(SingleCellExperiment)
+library(batchelor)
+library(scran.chan)
+library(dplyr)
+library(scran)
+library(scater)
+library(harmony)
+
+path <- "/gstore/data/omni/neuroscience/AD/Astrocytes_AD_MS_PD_meta/AD_MS_PD_cellbender_integration/scbasic_runs_for_all_datasets/"
+
+smajic <- readRDS(paste(path,"DS000015518_Smajic.scbasic_out.only_astrocytes.rds", sep=""))
+print("Done loading smajic")
+
+absinta <- readRDS(paste(path,"DS000015618_Absinta.scbasic_out.only_astrocytes.rds", sep=""))
+print("Done loading absinta")
+
+jakel <-  readRDS(paste(path, "DS000015650_Jakel.scbasic_out.only_astrocytes.rds", sep=""))
+print("Done loading jakel")
+
+schirmer <-  readRDS(paste(path, "DS000015651_Schirmer.scbasic_out.only_astrocytes.rds", sep=""))
+print("Done loading schirmer")
+
+cain <- readRDS(paste(path, "DS000016300_Cain.scbasic_out.only_astrocytes.rds", sep=""))
+print("Done loading cain")
+
+morabito <- readRDS(paste(path, "DS000016387_Morabito.scbasic_out.only_astrocytes.rds", sep=""))
+print("Done loading morabito")
+
+liddelow <- readRDS(paste(path, "DS000016463_Liddelow.scbasic_out.only_astrocytes.rds", sep=""))
+print("Done loading liddelow")
+
+wang <- readRDS(paste(path, "DS000016644_Wang.scbasic_out.only_astrocytes.rds", sep=""))
+print("Done loading wang")
+
+gerrits <-  readRDS(paste(path, "DS000016819_Gerrits.scbasic_out.only_astrocytes.rds", sep=""))
+print("Done loading gerrits")
+
+smith <- readRDS(paste(path, "DS000016915_Smith.scbasic_out.only_astrocytes.rds", sep=""))
+print("Done loading smith")
+
+seaad_1  <- readRDS(paste(path, "sea_ad_1_sce_05-01-24.scbasic_out.no_logcounts.only_astrocytes.rds", sep=""))
+seaad_2 <- readRDS(paste(path, "sea_ad_2_sce_05-01-24.scbasic_out.no_logcounts.only_astrocytes.rds", sep=""))
+seaad_3 <- readRDS(paste(path, "sea_ad_3_sce_05-01-24.scbasic_out.no_logcounts.only_astrocytes.rds", sep=""))
+seaad_4 <- readRDS(paste(path, "sea_ad_4_sce_05-01-24.scbasic_out.no_logcounts.only_astrocytes.rds", sep=""))
+print("Done loading all seattle datasets")
+
+
+
+bryois_1 <- readRDS(paste(path, "Bryois_part1.scbasic_out.only_astrocytes.no_logcounts.rds", sep=""))
+bryois_2 <- readRDS(paste(path, "Bryois_part2.scbasic_out.only_astrocytes.no_logcounts.rds", sep=""))
+print("Done loading all bryois")
+
+kamath <- readRDS(paste(path, "Kamath.scbasic_out.no_logcounts.only_astrocytes.rds", sep=""))
+print("Done loading kamath")
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCh38/GRCh38.IGIS4.0.genes.rds@REVISION-3"))
+
+rowdata_bryois1 <- DataFrame(symbol = rownames(bryois_1))
+rowdata_bryois2 <- DataFrame(symbol = rownames(bryois_2))
+rowdata_kamath <- DataFrame(symbol = rownames(kamath))
+
+rowdata_bryois1 <- left_join(as.data.frame(rowdata_bryois1), as.data.frame(feat), by = "symbol", multiple="first") %>% dplyr::select(symbol, ID)
+rowdata_bryois2 <- left_join(as.data.frame(rowdata_bryois2), as.data.frame(feat), by = "symbol", multiple="first") %>% dplyr::select(symbol, ID)
+rowdata_kamath <- left_join(as.data.frame(rowdata_kamath), as.data.frame(feat), by = "symbol", multiple="first") %>% dplyr::select(symbol, ID)
+
+rowData(bryois_1) <- rowdata_bryois1
+rowData(bryois_2) <- rowdata_bryois2
+rowData(kamath) <- rowdata_kamath
+
+
+bryois_1 <- bryois_1[!is.na(rowData(bryois_1)$ID),]
+bryois_2 <- bryois_2[!is.na(rowData(bryois_2)$ID),]
+kamath <- kamath[!is.na(rowData(kamath)$ID),]
+
+
+rownames(bryois_1) <- rowData(bryois_1)$ID
+rownames(bryois_2) <- rowData(bryois_2)$ID
+rownames(kamath) <- rowData(kamath)$ID
+
+all.inputs <- list(smajic, absinta, jakel, schirmer, cain, morabito, liddelow, wang, gerrits, smith, kamath, seaad_1, seaad_2, seaad_3, seaad_4, bryois_1, bryois_2)
+
+
+common <- lapply(all.inputs, rownames)
+common <- Reduce(intersect, common)
+print(length(common))
+
+all.inputs <- lapply(all.inputs, function(x) x[common,])
+
+### do prevent the error about mismatched rowData
+for (i in 1:length(all.inputs)) {
+  rowData(all.inputs[[i]]) <- NULL
+}
+
+```
+
+
+

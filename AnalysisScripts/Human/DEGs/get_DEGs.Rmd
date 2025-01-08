@@ -1,0 +1,529 @@
+---
+title: "Get_DEGs"
+output: html_document
+date: "2024-07-08"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(dplyr)
+library(gp.sa.diff)
+library(gp.sa.solo)
+library(SingleCellExperiment)
+library(edgeR)
+```
+
+
+```{r}
+
+se_agg <-  readRDS("aggregated_cells.AD_MS_PD.070724.donorIdUnique.rds")
+
+rowdata <- readRDS("/gstore/scratch/u/novikovg/Astrocytes_meta/AD_MS_PD_cellbender_harmony_2024/harmony_integration/another_run_after_removing_high_mito_clusters/AD_MS_PD_astrocytes.CLEAN_from_non_astrocytes_AND_clusters_high_in_mito.cellbender_counts.20cell_filter.ROWDATA.rds")
+
+coldata <- readRDS("/gstore/scratch/u/novikovg/Astrocytes_meta/AD_MS_PD_cellbender_harmony_2024/harmony_integration/another_run_after_removing_high_mito_clusters/AD_MS_PD_astrocytes.CLEAN_from_non_astrocytes_AND_clusters_high_in_mito.cellbender_counts.20cell_filter.COLDATA.rds")
+
+coldata$diagnosis_harmonized <- ifelse(coldata$diagnosis_harmonized == "RRMS", "MS", coldata$diagnosis_harmonized)
+
+rowdata_agg_cluster <- data.frame(ID = rownames(se_agg$sums))
+rowdata_agg_cluster_final <- left_join(rowdata_agg_cluster, as.data.frame(rowdata) %>% dplyr::select(ID, symbol), by = "ID")
+
+coldata_agg <- as.data.frame(se_agg$combinations)
+
+### in Bryois, one donor has multiple batches; to be able to left_join, let's overright the Bryois batch for now
+
+coldata[coldata$studybatch == "bryois",]$batch <- NA
+
+coldata_agg_final <-  left_join(coldata_agg, as.data.frame(coldata) %>% dplyr::select(age, diagnosis_harmonized, sex, studybatch, batch, donorIdUnique) %>% unique, by = c("donor" = "donorIdUnique")) 
+
+se_agg <- SingleCellExperiment(list(counts=se_agg$sums),
+    colData=coldata_agg_final,
+    rowData=rowdata_agg_cluster_final)
+
+y <- DGEList(assay(se_agg, 1))
+y$genes <- data.frame(origin=seq_len(nrow(se_agg)))
+y <- calcNormFactors(y)
+se_agg$lib.size <- y$samples$lib.size
+se_agg$norm.factors <- y$samples$norm.factors
+library(gp.sa.diff)
+assay(se_agg, "logCPM") <- normalizedCPM(assay(se_agg, 1), lib.size=se_agg$lib.size,
+    norm.factors=se_agg$norm.factors, offset=y$offset)
+
+saveRDS(se_agg, "/gstore/scratch/u/novikovg/Astrocytes_meta/AD_MS_PD_cellbender_harmony_2024/harmony_integration/another_run_after_removing_high_mito_clusters/DEGs/aggregated_cells.AD_MS_PD.070724.DonoruniqueID.SE.rds")
+```
+
+
+AD differential expression
+
+```{r}
+
+res_ad <- list()
+
+### Let's run DE for all datasets except the ones that have internal batches - marabito & cain
+
+studies_full <- unique(se_agg[,se_agg$diagnosis_harmonized == "AD"]$studybatch)
+
+## cain, morabito have batches
+
+studies <- studies_full[!studies_full %in% c("cain","morabito")]
+
+for (i in 1:length(studies)) {
+  study <- studies[i]
+   out_tmp <- gp.sa.diff::runVoom(se_agg, groups="diagnosis_harmonized", comparisons=list(c("AD", "Control")), subset.factor="studybatch",
+    subset.levels=c(study), commit="never")
+
+   out_final <- as.data.frame(out_tmp[[1]]) %>% mutate(symbol = rowData(se_agg)$symbol)
+
+   res_ad[[i]] <- out_final
+}
+
+
+out_cain <- as.data.frame(runVoom(se_agg[,se_agg$studybatch == "cain"], groups="diagnosis_harmonized", comparisons=list(c("AD", "Control")), block = "batch", commit="never")[[1]]) %>% mutate(symbol = rowData(se_agg)$symbol)
+
+out_morabito <- as.data.frame(runVoom(se_agg[,se_agg$studybatch == "morabito"], groups="diagnosis_harmonized", comparisons=list(c("AD", "Control")), block = "batch", commit="never")[[1]]) %>% mutate(symbol = rowData(se_agg)$symbol)
+
+n <- length(studies)
+res_ad[[n+1]] <- out_cain
+res_ad[[n+2]] <- out_morabito
+names(res_ad) = c(studies,"cain","morabito")
+
+
+res <- res_ad
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCh38/GRCh38.IGIS4.0.genes.rds@REVISION-3"))
+
+fc <- matrix(0, ncol=length(res), nrow=dim(feat)[1])
+rownames(fc) <- feat$ID
+
+pval <- matrix(NA, ncol=length(res), nrow=dim(feat)[1])
+rownames(pval) <- feat$ID
+
+mexp <- matrix(NA, ncol=length(res), nrow=dim(feat)[1])
+rownames(mexp) <- feat$ID
+
+sefc <- matrix(NA, ncol=length(res), nrow=dim(feat)[1])
+rownames(sefc) <- feat$ID
+
+for(i in 1:length(res)){
+        m<-match(rownames(fc), rownames(res[[i]]))
+        f.a=!is.na(m)
+        f.b=m[f.a]
+        fc[f.a,i] <- res[[i]][f.b,"LogFC"]
+        pval[f.a,i] <- res[[i]][f.b,"PValue"]
+        mexp[f.a,i] <- res[[i]][f.b,"AveExpr"]
+        sefc[f.a,i] <- res[[i]][f.b,"LogFC"]/res[[i]][f.b,"t"]
+}
+
+x<-strsplit(names(res),".", fixed=T)
+x2 <- sapply(x, function(x) purrr::pluck(x,1))
+colnames(pval) = x2
+colnames(fc) = x2
+colnames(mexp) = x2
+colnames(sefc) = x2
+
+
+deg_master <- list(pval=pval, fc=fc, se_fc=sefc, mean_exp=mexp)
+
+
+y <- strsplit(colnames(deg_master$pval), "_", fixed = T)
+
+y2 <- lapply(y, function(x)
+  purrr::pluck(x, 2))
+
+res <- vector("list", length = 1)
+
+
+f <- colnames(deg_master$pval)
+pval <- deg_master$pval[, f]
+fc <- deg_master$fc[, f]
+mexp <- deg_master$mean_exp[, f]
+sefc <- cbind(fc,deg_master$se_fc[,f])
+
+pval_up <- pval * 0
+pval_down <- pval * 0
+
+for (i in 1:dim(fc)[2]) {
+    f1 <- which(fc[, i] > 0)
+    f2 <- which(fc[, i] < 0)
+    pval_up[f1, i] <- pval[f1, i] * 0.5
+    pval_up[f2, i] <- 1 - (pval[f2, i] * 0.5)
+    pval_down[f1, i] <- 1 - (pval[f1, i] * 0.5)
+    pval_down[f2, i] <- pval[f2, i] * 0.5
+
+  }
+
+library(metafor)
+library(metap)
+meta_up <- suppressWarnings(apply(pval_up, 1, function(y) sumlog(y[!is.na(y)])$p))
+meta_down <- suppressWarnings(apply(pval_down, 1, function(y) sumlog(y[!is.na(y)])$p))
+mean_fc <- rowMeans(fc, na.rm = T)
+mean_exp <- rowMeans(mexp, na.rm = T)
+
+n_studies <- length(studies_full)
+
+f_se_fc <- apply(sefc[,1:n_studies],1,function(x) sum(!is.na(x))>=2)
+f_se_se <- apply(sefc[,(n_studies+1):(n_studies*2)],1,function(x) sum(!is.na(x))>2)
+f_se <- f_se_fc & f_se_se
+
+dsl_res <- apply(sefc[f_se,], 1, function(row) rma(yi=as.vector(row[1:n_studies]),vi=as.vector(row[(n_studies+1):(n_studies*2)]),method="DL"))
+
+betas <- sapply(dsl_res,function(x) purrr::pluck(x,"beta"))
+ses <- sapply(dsl_res,function(x) purrr::pluck(x,"se"))
+dl_ps <- sapply(dsl_res,function(x) purrr::pluck(x,"pval"))
+dl_ps <- sapply(dsl_res,function(x) purrr::pluck(x,"pval"))
+
+dl_sub <- data.frame(ID=rownames(sefc)[f_se],beta=betas,se=ses,pval=dl_ps)
+
+dl_all <- data.frame(ID=rownames(sefc))
+dl_all <- left_join(dl_all,dl_sub[,c("ID","beta","se","pval")],by=c("ID"="ID"))
+
+  temp <-
+    data.frame(
+      ID = names(meta_up),
+      AveExpr = as.numeric(mean_exp),
+      PValue = dl_all$pval,
+      FDR = p.adjust(dl_all$pval,method="BH"),
+      LogFC = as.numeric(mean_fc),
+      dl_mu = dl_all$beta,
+      dl_s = dl_all$se,
+      metap_up = meta_up,
+      metap_down = meta_down,
+      adj_metap_up = p.adjust(meta_up, method = "BH"),
+      adj_metap_down = p.adjust(meta_down, method = "BH"),
+      n_tested = apply(pval_up, 1, function(y)
+        sum(!is.na(y))),
+      n_up = apply(fc, 1, function(y)
+        sum(y > 0, na.rm = T)),
+      n_down = apply(fc, 1, function(y)
+        sum(y < 0, na.rm = T))
+    )
+
+  temp <- left_join(temp, feat, by = c("ID" = "ID"))
+  ord <- order(temp$metap_up)
+
+  temp <- temp[ord, ]
+  x <-
+    c(
+      "ID",
+      "symbol",
+      "AveExpr",
+      "PValue",
+      "FDR",
+      "LogFC",
+      "dl_mu",
+      "dl_s",
+      "metap_up",
+      "metap_down",
+      "adj_metap_up",
+      "adj_metap_down",
+      "n_tested",
+      "n_up",
+      "n_down",
+      "symbol"
+    )
+
+res_dsl <- temp %>% dplyr::select(x)
+
+saveRDS(res_dsl, "/gstore/scratch/u/novikovg/Astrocytes_meta/AD_MS_PD_cellbender_harmony_2024/harmony_integration/another_run_after_removing_high_mito_clusters/DEGs/res_dsl.AD.070724.rds")
+
+```
+
+Volcano plot
+```{r}
+
+res_dsl$meta_p_combined <- ifelse(res_dsl$dl_mu>=0, res_dsl$metap_up, res_dsl$metap_down)
+
+res_dsl$diffexpressed <- ifelse(res_dsl$adj_metap_up<=0.05 & res_dsl$dl_mu>=0.5 & res_dsl$n_up>=3, "up",
+                          ifelse(res_dsl$adj_metap_down<=0.05 & res_dsl$dl_mu<= -0.5 & res_dsl$n_down>=3, "down","unchanged"))
+
+library(ggrepel)
+
+protein_coding <- feat %>% dplyr::filter(type == "protein_coding")
+res_dsl <- res_dsl %>% dplyr::filter(symbol %in% protein_coding$symbol)
+
+p_volcano <- ggplot(data=res_dsl, aes(x=dl_mu, y=-log10(meta_p_combined), col=diffexpressed, label=symbol)) +
+    geom_point(size = 1) +
+    theme_classic() + theme(axis.title=element_text(size=12), axis.text=element_text(size=12),legend.text=element_text(size=10)) +
+    geom_text_repel(data = res_dsl[res_dsl$diffexpressed %in% c("up","down") & abs(res_dsl$dl_mu) >= 0.7,],size=3, fontface = "italic", aes(x=dl_mu,y=-log10(meta_p_combined)),show.legend = FALSE,box.padding = 0.5, max.overlaps = 15) + scale_color_manual(values=c("blue", "black", "firebrick3"), name = "") + xlab("Meta-LogFoldChange") + ylab(bquote(log[10](Meta-PValue)))
+
+png("/gne/web/dev/apache/htdocs/people/novikovg/Astrocytes_meta/Harmony_AD_MS_PD_integration_2024/harmony_results_with_removing_mito_clusters/Volcano_plot.png", width = 1800, height = 1800, res = 300)
+p_volcano +guides(colour = guide_legend(override.aes = list(size=2.5)))
+dev.off()
+
+
+### plot score per study 
+
+ad_up_candidates <- res_dsl %>% dplyr::filter(diffexpressed == "up")
+ad_down_candidates <- res_dsl %>% dplyr::filter(diffexpressed == "down")
+
+se_agg$AD_up_score <- colMeans(assay(se_agg, 'logCPM')[ad_up_candidates$ID,],na.rm = TRUE)
+se_agg$AD_down_score <- colMeans(assay(se_agg, 'logCPM')[ad_down_candidates$ID,],na.rm = TRUE)
+
+se_agg$diagnosis_harmonized_by_disease <- 
+  ifelse(se_agg$studybatch %in% c("jakel", "schirmer", "absinta", "bryois") & se_agg$diagnosis_harmonized == "Control", "MS_Control",
+         
+ifelse(se_agg$studybatch %in% c("smajic","wang", "kamath") &
+se_agg$diagnosis_harmonized == "Control", "PD_Control",
+
+ifelse(se_agg$studybatch %in% c("cain", "morabito","gerrits", "smith", "SEA-AD", "liddelow") &
+se_agg$diagnosis_harmonized == "Control", "AD_Control",
+se_agg$diagnosis_harmonized)))
+
+se_agg$diagnosis_harmonized_by_disease <- ifelse(se_agg$diagnosis_harmonized == "RRMS", "MS", se_agg$diagnosis_harmonized_by_disease)
+
+coldata_se_agg <- as.data.frame(colData(se_agg)) %>% dplyr::filter(diagnosis_harmonized_by_disease %in% c("AD", "AD_Control"))
+coldata_se_agg$diagnosis_harmonized <- factor(coldata_se_agg$diagnosis_harmonized, c("Control","AD"))
+
+p_AD_up_score_by_study <- ggplot(coldata_se_agg, aes(x=diagnosis_harmonized, y=AD_up_score,fill=diagnosis_harmonized)) + theme_classic() +geom_boxplot(outlier.shape=NA) + geom_jitter(width = 0.1)+ facet_wrap(~studybatch, ncol= 3) + theme(axis.text.x = element_text(angle = 65, vjust = 0.5)) + scale_fill_manual(values = c("gray43","dodgerblue3"), name = "Diagnosis") + xlab("") + theme(axis.text.x = element_blank(), axis.ticks = element_blank())
+
+png("/gne/web/dev/apache/htdocs/people/novikovg/Astrocytes_meta/Harmony_AD_MS_PD_integration_2024/harmony_results_with_removing_mito_clusters/AD_DEG_up_score_per_study.png", width = 1100, height = 1000, res = 300)
+p_AD_up_score_by_study
+dev.off()
+
+
+```
+Pathway analysis for up and downregulated genes
+
+```{r}
+library(clusterProfiler)
+library(enrichplot)
+
+
+
+library(tidyr)
+res_dsl_no_na <- res_dsl %>% drop_na()
+
+go_enrich_ad_up_bp <- enrichGO(gene = unique(ad_up_candidates$symbol),
+                      universe = unique(res_dsl_no_na$symbol),
+                      OrgDb = "org.Hs.eg.db",
+                      keyType = 'SYMBOL',
+                      readable = T,
+                      ont = "BP",
+                      pvalueCutoff = 0.05,
+                      qvalueCutoff = 0.10)
+
+go_enrich_ad_up_mf <- enrichGO(gene = unique(ad_up_candidates$symbol),
+                      universe = unique(res_dsl_no_na$symbol),
+                      OrgDb = "org.Hs.eg.db",
+                      keyType = 'SYMBOL',
+                      readable = T,
+                      ont = "MF",
+                      pvalueCutoff = 0.05,
+                      qvalueCutoff = 0.10)
+
+go_enrich_ad_down_cc <- enrichGO(gene = unique(ad_down_candidates$symbol),
+                      universe = unique(res_dsl_no_na$symbol),
+                      OrgDb = "org.Hs.eg.db",
+                      keyType = 'SYMBOL',
+                      readable = T,
+                      ont = "CC",
+                      pvalueCutoff = 0.05,
+                      qvalueCutoff = 0.10)
+
+png("/gne/web/dev/apache/htdocs/people/novikovg/Astrocytes_meta/Harmony_AD_MS_PD_integration_2024/harmony_results_with_removing_mito_clusters/AD_DEGs_up_BP.png", width = 1700, height = 1800, res = 300)
+dotplot(go_enrich_ad_up_bp, showCategory  = 15)
+dev.off()
+
+png("/gne/web/dev/apache/htdocs/people/novikovg/Astrocytes_meta/Harmony_AD_MS_PD_integration_2024/harmony_results_with_removing_mito_clusters/AD_DEGs_up_MF.png", width = 1700, height = 1800, res = 300)
+dotplot(go_enrich_ad_up_mf, showCategory  = 15)
+dev.off()
+
+```
+
+4-way with mouse results
+
+First, let's get a comprehensive mapping list
+```{r}
+mouse_de <- readRDS("/gstore/data/astroMetaAnalysis/data/res_dsl_AD_full.011824.rds")
+
+### get biomart list
+library(biomaRt)
+mouse = useMart("ensembl", dataset = "mmusculus_gene_ensembl")
+genesV2_biomart <- getBM(attributes = c("hsapiens_homolog_associated_gene_name","external_gene_name"), filters = "mgi_symbol", values = mouse_de$symbol, mart = mouse)
+
+### some genes are missed by biomart, pulling from jax and doing union with biomart not to miss things
+mouse_human_genes = read.csv("http://www.informatics.jax.org/downloads/reports/HOM_MouseHumanSequence.rpt",sep="\t")
+mouse_human_genes <- mouse_human_genes %>% dplyr::filter(DB.Class.Key %in% rownames(table(mouse_human_genes$DB.Class.Key)[table(mouse_human_genes$DB.Class.Key) == 2]))
+
+convert_mouse_to_human <- function(gene_list){
+
+  output = c()
+  output_mouse <- c()
+  for(gene in gene_list){
+    class_key = (mouse_human_genes %>% filter(Symbol == gene & Common.Organism.Name=="mouse, laboratory"))[['DB.Class.Key']]
+    if(!identical(class_key, integer(0)) ){
+      human_genes = (mouse_human_genes %>% filter(DB.Class.Key == class_key & Common.Organism.Name=="human"))[,"Symbol"]
+      mouse_genes = (mouse_human_genes %>% filter(DB.Class.Key == class_key & Common.Organism.Name=="mouse, laboratory"))[,"Symbol"]
+
+      for(human_gene in human_genes){
+        output = append(output,human_gene)
+      }
+
+      for(mouse_gene in mouse_genes){
+        output_mouse = append(output_mouse,mouse_gene)
+      }
+    }
+  }
+
+  output_list <- list()
+  output_list[[1]] <- output
+  output_list[[2]] <- output_mouse
+  return (output_list)
+}
+
+### get jax list
+genesV2_jax <- convert_mouse_to_human(mouse_de$symbol)
+genesV2_jax.df <- data.frame(hsapiens_homolog_associated_gene_name=genesV2_jax[[1]], 
+                          external_gene_name = genesV2_jax[[2]])
+
+##get union to make sure nothing is missed
+genes_V2_both <- rbind(genesV2_biomart, genesV2_jax) %>% unique
+colnames(genes_V2_both) <- c("human","mouse")
+saveRDS(genes_V2_both, "mous_human_gene_mapping.rds")
+
+mouse_genes_with_mapping <- left_join(as.data.frame(mouse_de), as.data.frame(genes_V2_both), by = c("symbol" = "mouse"))
+
+mouse_genes_with_mapping$diffexpressed <- ifelse(mouse_genes_with_mapping$dl_mu >= 0.5 & mouse_genes_with_mapping$adj_metap_up<= 0.05 & mouse_genes_with_mapping$n_up>=4, "up",
+                                      ifelse(mouse_genes_with_mapping$dl_mu <= -0.5 & mouse_genes_with_mapping$adj_metap_down<= 0.05 & mouse_genes_with_mapping$n_down>=4, "down", "unchanged"))
+
+
+res_merged <- merge(res_dsl,mouse_genes_with_mapping,by.x="symbol", by.y="human", suffixes = c(".human", ".mouse"))
+
+res_merged <- res_merged %>% dplyr::mutate(sig=ifelse(diffexpressed.human %in% c("up", "down") & diffexpressed.mouse  %in% c("up", "down"), "Changed in both",
+ifelse(diffexpressed.human %in% c("up", "down") & diffexpressed.mouse == "unchanged", "Human-specific",
+ifelse(diffexpressed.mouse %in% c("up", "down") & diffexpressed.human == "unchanged", "Mouse-specific", "Unchanged in both"))))
+
+res_merged <- res_merged  %>% dplyr::select(dl_mu.human,dl_mu.mouse,diffexpressed.human, diffexpressed.mouse,sig,symbol) %>% unique %>% drop_na()
+
+p <- ggplot(res_merged, aes(x=dl_mu.human, y = dl_mu.mouse, color=sig)) +
+  geom_point() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black"), axis.text = element_text(size = 12, colour = "black"), axis.title = element_text(size = 14)) +
+  scale_color_manual(values=c( "firebrick3", "dodgerblue3", "forestgreen","gray67"), name = "") + geom_hline(yintercept =0) +
+  geom_vline(xintercept=0) +
+  geom_text_repel(data = res_merged[res_merged$sig == "Changed in both",],size=3, aes(x=dl_mu.human,y=dl_mu.mouse,label=symbol),show.legend = FALSE,box.padding = 0.8, max.overlaps = 20, fontface = "italic") +  xlab("Human Meta LogFC(AD vs Control)") + ylab("Mouse Meta LogFC(AD vs Control)") + guides(fill=guide_legend(title=NULL))
+
+png("/gne/web/dev/apache/htdocs/people/novikovg/Astrocytes_meta/Harmony_AD_MS_PD_integration_2024/harmony_results_with_removing_mito_clusters/4_way_human_mouse_AD_DEGs.png", width = 2000, height = 1800, res = 300)
+p
+dev.off()
+
+
+
+
+
+```
+Check out some individuals hits
+
+```{r}
+
+colors <- c(adjustcolor('#31a354', alpha.f = 0.9), '#8856a7', adjustcolor('#fa9fb5', 0.9),  '#2b8cbe', adjustcolor('#fec44f', alpha.f = 0.9), adjustcolor('#c51b8a', 0.9),  adjustcolor('#d95f0e', alpha.f = 0.9), adjustcolor('turquoise1', alpha.f = 0.9))
+
+get_plot_for_gene <- function(se_donorunique_agg, genename) {
+
+  gene = rowData(se_donorunique_agg)[rowData(se_donorunique_agg)$symbol == genename,]$ID
+  
+  df_mic <- data.frame(expr = t(assay(se_donorunique_agg[gene,],2)), diagnosis = se_donorunique_agg$diagnosis_harmonized, studybatch = se_donorunique_agg$studybatch) %>% dplyr::filter(diagnosis %in% c("AD", "Control"))
+  df_mic$diagnosis <- factor(df_mic$diagnosis, levels = c("Control","AD"))
+
+  p <- ggplot(df_mic, aes(diagnosis,!!sym(gene), fill=diagnosis)) + scale_fill_manual(values = c("gray43", "dodgerblue3")) +
+    geom_boxplot(outlier.shape = NA) +
+    geom_jitter(width = 0.1)+
+    theme(legend.position = "none") + theme_classic() + theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.5)) + ylab("logCPM") + facet_wrap(~ studybatch)
+
+  return(p)
+}
+
+png("/gne/web/dev/apache/htdocs/people/novikovg/Astrocytes_meta/Harmony_AD_MS_PD_integration_2024/harmony_results_with_removing_mito_clusters/C1QL1_expression_per_study.png", width = 1500, height = 1800, res = 300)
+get_plot_for_gene(se_agg[,se_agg$diagnosis_harmonized_by_disease %in% c("AD", "AD_Control")], "C1QL1")
+dev.off()
+
+```
+
+Expression of AD DEGs per cluster
+
+```{r}
+
+se_agg_per_cluster <- readRDS("../DEGs/aggregated_cells.AD_MS_PD.070724.donorIdUnique_and_cluster.rds")
+
+rowdata_agg_cluster_2 <- data.frame(ID = rownames(se_agg_per_cluster$sums))
+rowdata_agg_cluster_final_2 <- left_join(rowdata_agg_cluster_2, as.data.frame(rowdata) %>% dplyr::select(ID, symbol), by = "ID")
+
+coldata_agg_2 <- as.data.frame(se_agg_per_cluster$combinations)
+
+### in Bryois, one donor has multiple batches; to be able to left_join, let's overright the Bryois batch for now
+
+coldata_agg_final_2 <-  left_join(coldata_agg_2, as.data.frame(coldata) %>% dplyr::select(age, diagnosis_harmonized, sex, studybatch, batch, donorIdUnique) %>% unique, by = c("donor" = "donorIdUnique")) 
+
+se_agg_per_donor_cluster <- SingleCellExperiment(list(counts=se_agg_per_cluster$sums),
+    colData=coldata_agg_final_2,
+    rowData=rowdata_agg_cluster_final_2)
+
+y <- DGEList(assay(se_agg_per_donor_cluster, 1))
+y$genes <- data.frame(origin=seq_len(nrow(se_agg_per_donor_cluster)))
+y <- calcNormFactors(y)
+se_agg_per_donor_cluster$lib.size <- y$samples$lib.size
+se_agg_per_donor_cluster$norm.factors <- y$samples$norm.factors
+library(gp.sa.diff)
+assay(se_agg_per_donor_cluster, "logCPM") <- normalizedCPM(assay(se_agg_per_donor_cluster, 1), lib.size=se_agg_per_donor_cluster$lib.size,
+    norm.factors=se_agg_per_donor_cluster$norm.factors, offset=y$offset)
+
+saveRDS(se_agg_per_donor_cluster, "/gstore/scratch/u/novikovg/Astrocytes_meta/AD_MS_PD_cellbender_harmony_2024/harmony_integration/another_run_after_removing_high_mito_clusters/DEGs/aggregated_cells.AD_MS_PD.070724.DonoruniqueID_and_cluster.SE.rds")
+
+```
+Dig into Cain et al discrepancy
+
+```{r}
+meta_cain <- read.csv("/gstore/data/omni/neuroscience/AD/syn21589957-ROSMAP-Brain-snRNAseq/ROSMAP_assay_scrnaSeq_metadata.csv")
+p1<- read.csv("/gstore/data/omni/neuroscience/AD/syn21589957-ROSMAP-Brain-snRNAseq/ROSMAP_biospecimen_metadata.csv", header=T, stringsAsFactors=F)
+p2<- read.csv("/gstore/data/omni/neuroscience/AD/syn21589957-ROSMAP-Brain-snRNAseq/ROSMAP_clinical.csv", header=T, stringsAsFactors=F)
+
+p12 <- dplyr::left_join(p1, p2, by = "individualID")
+all_meta <-  dplyr::left_join(meta_cain, p12, by = "specimenID")
+all_meta$donor_to_match <- paste("cain", all_meta$specimenID, sep="_")
+
+se_cain_meta <-all_meta %>% dplyr::filter(donor_to_match %in% se_cain$donor)
+
+cain_ad_donors_reclassified <- se_cain_meta %>% dplyr::filter(ceradsc %in% c(1, 2) & braaksc %in% c(4, 5) & cogdx %in% c(4, 5)) ### 5 donors
+cain_control_donors_reclassified  <- se_cain_meta %>% dplyr::filter(ceradsc %in% c(3, 4) & braaksc %in% c(0, 1, 2, 3) & cogdx == 1) ### 5 donors
+
+cain_donors_to_exclude <- se_agg[,se_agg$studybatch == "cain"]$donor[! se_agg[,se_agg$studybatch == "cain"]$donor %in% c(cain_ad_donors_reclassified$donor_to_match, cain_control_donors_reclassified$donor_to_match)]
+
+se_agg_cain_fixed <- se_agg[,! se_agg$donor %in% cain_donors_to_exclude]
+
+
+se_agg_cain_fixed$diagnosis_harmonized_by_disease <- 
+  ifelse(se_agg_cain_fixed$studybatch %in% c("jakel", "schirmer", "absinta", "bryois") & se_agg_cain_fixed$diagnosis_harmonized == "Control", "MS_Control",
+         
+ifelse(se_agg_cain_fixed$studybatch %in% c("smajic","wang", "kamath") &
+se_agg_cain_fixed$diagnosis_harmonized == "Control", "PD_Control",
+
+ifelse(se_agg_cain_fixed$studybatch %in% c("cain", "morabito","gerrits", "smith", "SEA-AD", "liddelow") &
+se_agg_cain_fixed$diagnosis_harmonized == "Control", "AD_Control",
+se_agg_cain_fixed$diagnosis_harmonized)))
+
+se_agg_cain_fixed$diagnosis_harmonized_by_disease <- ifelse(se_agg_cain_fixed$diagnosis_harmonized == "RRMS", "MS", se_agg_cain_fixed$diagnosis_harmonized_by_disease)
+
+coldata_se_agg_cain_fixed <- as.data.frame(colData(se_agg_cain_fixed)) %>% dplyr::filter(diagnosis_harmonized_by_disease %in% c("AD", "AD_Control"))
+coldata_se_agg_cain_fixed$diagnosis_harmonized <- factor(coldata_se_agg_cain_fixed$diagnosis_harmonized, c("Control","AD"))
+
+p_AD_up_score_by_study <- ggplot(coldata_se_agg_cain_fixed, aes(x=diagnosis_harmonized, y=AD_up_score,fill=diagnosis_harmonized)) + theme_classic() +geom_boxplot(outlier.shape=NA) + geom_jitter(width = 0.1)+ facet_wrap(~studybatch, ncol= 3) + theme(axis.text.x = element_text(angle = 65, vjust = 0.5)) + scale_fill_manual(values = c("gray43","dodgerblue3"), name = "Diagnosis") + xlab("") + theme(axis.text.x = element_blank(), axis.ticks = element_blank())
+
+
+saveRDS(se_agg_cain_fixed, "/gstore/scratch/u/novikovg/Astrocytes_meta/AD_MS_PD_cellbender_harmony_2024/harmony_integration/another_run_after_removing_high_mito_clusters/DEGs/aggregated_cells.AD_MS_PD.070724.DonoruniqueID.Cain_subset_AD_controls.SE.rds")
+
+
+```
+
+
+Re-run DEG analysis with subsetting for cain
+
+```{r}
+
+```
+
+
+
+

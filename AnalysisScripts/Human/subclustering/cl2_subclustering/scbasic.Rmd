@@ -1,0 +1,360 @@
+---
+title: Basic exploratory analysis of single-cell RNA sequencing data
+author:
+- name: novikovg
+date: "`r Sys.Date()`"
+output:
+  BiocStyle::html_document:
+    toc_float: yes
+    titlecaps: false 
+  md_document:
+    preserve_yaml: yes
+# memory in MB, time in minutes
+compilation:
+  ncpu: 14
+  memory: 20000
+  time: 120
+  module: R/uat
+---
+
+```{r, results='hide', echo=FALSE}
+knitr::opts_chunk$set(error=FALSE, message=FALSE, cache=FALSE)
+metacommons::clearOrigins()
+metacommons::clearFeatureNames()
+metacommons::clearSampleNames()
+library(BiocStyle)
+```
+
+```{r generator, echo=FALSE, eval=FALSE}
+runSingleCellBasic2(se = scbasic_out.snn_0.5[, !scbasic_out.snn_0.5$cluster %in% 
+    c(4, 7, 8, 12)], cluster.snn.resolution = 0.5, commit = "never", 
+    ncpu = 14)
+```
+
+# Setting up the dataset
+
+We start from our `SummarizedExperiment` object, 
+which contains all experimental data and metadata for this study.
+Each row corresponds to a gene while each column corresponds to a sample.
+
+```{r}
+library(SummarizedExperiment)
+se <- local({ # gp.sa.core tag... feel free to delete me (1)
+    dsassembly::getExperiment(id="DS000015425", legacy=FALSE, version="1", experiment="rnaseq")
+    stop("input 'SingleCellExperiment' seems to have been modified, insert relevant commands here to create 'se'.")
+})
+se
+```
+
+We convert this into a `SingleCellExperiment`:
+    
+```{r}
+library(SingleCellExperiment)
+sce <- as(se, "SingleCellExperiment")
+```
+
+Finally, we load the _gp.sa.solo_ package to get some utilities.
+
+```{r}
+library(gp.sa.solo)
+```
+
+# Running the analysis
+
+## Initializing the matrix 
+
+We run a basic analysis using some functions from the _scran.chan_ package.
+First, we initialize the count matrix to a sparse format. 
+Note that the object `x` should not be serialized in any manner.
+
+```{r}
+library(scran.chan)
+x <- initializeSparseMatrix(assay(sce, 1), num.threads = 14)
+```
+
+## Performing quality control on cells
+
+We then compute some QC metrics for each cell.
+Here, we use the mitochondrial genes as the subset of control features:
+
+```{r}
+is.mito <- hasSeqnames(rowRanges(sce), c('MT', 'M', 'chrM', 'chrMT'))
+summary(is.mito)
+qc.metrics <- perCellQCMetrics.chan(x, 
+    subsets = list(mito = is.mito), 
+    num.threads = 14)
+```
+
+We define some filters on the QC metrics using an outlier-based approach. 
+The idea is that low-quality cells will have outlier values (in the "bad" direction) for one or more of the metrics.
+
+```{r}
+qc.filters <- perCellQCFilters.chan(
+    sums = qc.metrics$sums, 
+    detected = qc.metrics$detected, 
+    subsets = qc.metrics$subsets,
+    nmads = 3)
+qc.filters$thresholds
+```
+
+Let's make some plots as well, because why not.
+
+```{r}
+hist(log10(qc.metrics$sums+1), xlab="Log[10](Total sum of counts)")
+abline(v=log10(qc.filters$thresholds$sums+1), col="red", pty=2, lwd=2)
+hist(log10(qc.metrics$detected+1), xlab="Log[10](Number of detected genes)")
+abline(v=log10(qc.filters$thresholds$detected+1), col="red", pty=2, lwd=2)
+hist(qc.metrics$subsets$mito, xlab="Mitochondrial proportion")
+abline(v=qc.filters$thresholds$subsets$mito, col="red", pty=2, lwd=2)
+```
+
+Finally, we apply those filters to subset the dataset so that we only retain high-quality cells.
+
+```{r}
+qc.discard <- qc.filters$filters$overall
+summary(qc.discard)
+x <- filterCells.chan(x, qc.discard)
+```
+
+## Normalization and log-transformation
+
+We re-use the total sum for each cell to compute size factors based on the library size.
+
+```{r}
+lib.sizes <- qc.metrics$sums[!qc.discard]
+```
+
+We divide each cell's counts by its size factors and then log-transform:
+
+```{r}
+normed <- logNormCounts.chan(x, lib.sizes)
+```
+
+We can inspect the size factors, which are scaled versions of the library sizes:
+
+```{r}
+sf <- normed$size.factors
+hist(log10(sf), xlab="Log[10](Size factors)")
+```
+
+## Variance modelling
+
+We fit a mean-dependent trend to the variances of the log-expression values:
+
+```{r}
+variances <- modelGeneVar.chan(normed, num.threads = 14)
+variances <- variances$statistics
+head(variances)
+```
+
+We then define the highly variable genes as those with the largest residuals:
+
+```{r}
+keep <- rank(-variances$residuals, ties.method = "first") <= 2000
+summary(keep) # indeed we kept the specified number.
+```
+
+Let's make a plot to keep things spicy.
+
+```{r}
+plot(variances$means, variances$variances, xlab="Mean", ylab="Variance", col=factor(keep))
+o <- order(variances$means)
+lines(variances$means[o], variances$fitted[o], col="dodgerblue", lwd=2)
+```
+
+## Principal components analysis
+
+Running a PCA to compress and denoise the dataset by only extracting the top few PCs:
+
+```{r}
+pca <- runPCA.chan(normed, num.comp = 25, subset = keep, num.threads = 14)
+plot(cumsum(pca$prop.variance), ylab="Variance explained", xlab="PC number", type="l")
+```
+
+The idea is to use the PCs in place of the per-gene log-expression matrix in downstream (distance-based) calculations. 
+Distances in PC space can be used as proxies for those same distance in the original expression space.
+
+```{r}
+pcs <- pca$components
+dim(pcs)
+```
+
+## Clustering and visualization {.tabset}
+
+Several steps downstream of the PCA are bundled into a single function for efficiency purposes. 
+This includes graph-based (or k-means) clustering, t-SNE and UMAP, which are run in parallel for speed.
+Each of these can also be run separately, e.g., with `runUMAP.chan` if more control of the parameters is required.
+
+```{r}
+downstream.out <- runAllDownstream(pcs, 
+    do.tsne = TRUE,
+    do.umap = TRUE,
+    do.cluster.kmeans = FALSE,
+    do.cluster.snn = TRUE,
+    tsne.perplexity = 30,
+    umap.num.neighbors = 15,
+    cluster.kmeans.k = 10,
+    cluster.snn.method = "multilevel",
+    cluster.snn.num.neighbors = 10,
+    cluster.snn.resolution = 0.5,
+    num.threads = 14,
+    approximate = TRUE,
+    downsample = NULL)
+names(downstream.out)
+```
+
+We fish out a clustering to use for all subsequent analyses.
+
+```{r}
+chosen.clusters <- downstream.out$cluster.snn$membership
+table(chosen.clusters)
+```
+
+### UMAP {-}
+
+```{r, fig.asp=1, fig.wide=TRUE}
+library(ggplot2)
+df <- data.frame(
+    UMAP1=downstream.out$umap[,1], 
+    UMAP2=downstream.out$umap[,2], 
+    cluster=factor(chosen.clusters)
+)
+ggplot(df) + geom_point(aes(x=UMAP1, y=UMAP2, color=cluster), alpha=0.5)
+```
+
+### t-SNE {-}
+
+```{r, fig.asp=1, fig.wide=TRUE}
+library(ggplot2)
+df <- data.frame(
+    TSNE1=downstream.out$tsne[,1], 
+    TSNE2=downstream.out$tsne[,2], 
+    cluster=factor(chosen.clusters)
+)
+ggplot(df) + geom_point(aes(x=TSNE1, y=TSNE2, color=cluster), alpha=0.5) 
+```
+
+## Detecting markers for each cluster {.tabset}
+
+We create a ranking of marker genes for each cluster, based on summarizing statistics from pairwise comparisons between clusters.
+We have summaries based on Cohen's $d$ as well as the area under the curve.
+
+```{r}
+markers <- scoreMarkers.chan(
+    normed, 
+    chosen.clusters, 
+    lfc = 0,
+    num.threads = 14
+)
+markers <- markers$statistics
+names(markers)
+head(markers[[1]])
+```
+
+We then display the relative log-expression for the top 20 markers of each cluster.
+
+```{r, results='asis'}
+# Collecting the means for each cluster into a matrix.
+mean.mat <- lapply(markers, function(x) x$mean[match(rownames(sce), rownames(x))])
+mean.mat <- do.call(cbind, mean.mat)
+rownames(mean.mat) <- rownames(sce)
+
+library(pheatmap)
+for (n in names(markers)) {
+    current <- head(markers[[n]], 20)
+    chosen <- rownames(current)
+    chosen <- match(chosen, rownames(mean.mat))
+    effects <- mean.mat[chosen,,drop=FALSE]
+    effects <- effects - rowMeans(effects, na.rm=TRUE)
+
+    cat("\n\n### ", n, " {-}\n")
+
+    # Making the heatmap and annotating the current cluster: 
+    pheatmap(effects, 
+        breaks=seq(-3, 3, length.out=101),
+        main=paste('Cluster', n),
+        annotation_col=data.frame(
+            current=as.character(colnames(effects)==n), 
+            row.names=colnames(effects)
+        ),
+        annotation_colors=list(current=c(`TRUE`='grey20', `FALSE`='grey80')))
+}
+```
+
+# Creating outputs
+
+We massage most of this information into a `SingleCellExperiment` object.
+
+```{r}
+sce <- sce[,!qc.discard]
+sce$sums <- qc.metrics$sums[!qc.discard]
+sce$detected <- qc.metrics$detected[!qc.discard]
+sce$mito_prop <- qc.metrics$subsets$mito[!qc.discard]
+
+sizeFactors(sce) <- sf
+ass <- assay(sce, 1)
+library(DelayedArray)
+assay(sce, "logcounts") <- log1p(t(t(DelayedArray(ass))/sf))/log(2)
+
+reducedDim(sce, "PCA") <- t(pcs)
+reducedDim(sce, "TSNE") <- downstream.out$tsne
+reducedDim(sce, "UMAP") <- downstream.out$umap
+
+sce$cluster <- chosen.clusters
+sce$cluster.snn <- downstream.out$cluster.snn$membership
+
+trackinfo(sce)$description <- paste("A SingleCellExperiment object for a single batch,",
+    "containing dimensionality reduction and clustering results.")
+
+sce
+```
+
+We do the same for the HVGs.
+
+```{r}
+dec <- HVGStatFrame(variances, 
+    statistic='residuals', 
+    method='modelGeneVar.chan',
+    description='HVGs detected using the modelGeneVar.chan() function')
+```
+
+Finally, we store the marker sets.
+
+```{r}
+for (i in seq_along(markers)) {
+    group <- names(markers)[i]
+    results <- markers[[i]]
+    markers[[i]] <- MarkerStatFrame(results, 
+        group=group, 
+        method='scoreMarkers.chan', 
+        order="cohen.rank", 
+        factor='cluster',
+        description=sprintf('Comparison of cluster %s against all other clusters', group)
+    )
+}
+```
+# Saving all results
+
+We create a directory to dump results into.
+
+```{r}
+### DO NOT REMOVE ###
+library(gp.sa.core)
+createResultDir()
+```
+
+We then save all results of interest to the specified files within this directory.
+
+```{r}
+saveResult(sce, "sce")
+saveResult(dec, "dec")
+for (i in seq_along(markers)) {
+    saveResult(markers[[i]], paste0("markers", '-', i))
+}
+```
+
+# Session information {-}
+
+```{r}
+sessionInfo()
+```

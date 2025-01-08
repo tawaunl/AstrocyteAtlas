@@ -1,0 +1,542 @@
+---
+title: "Subcluster_cluster_2_astrocytes"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(dplyr)
+library(scater)
+library(scran.chan)
+library(tidyr)
+```
+
+```{r}
+se_gfap <- readRDS("/gstore/data/omni/neuroscience/AD/Astrocytes_AD_MS_PD_meta/AD_MS_PD_cellbender_integration/harmony_integration/another_run_after_removing_high_mito_clusters/subclustering/AD_MS_PD_astrocytes.CLEAN_from_non_astrocytes_AND_clusters_high_in_mito.cellbender_counts.20cell_filter.Cluster_2_only.rds")
+
+```
+
+```{r}
+get_cluster_marker_symbols <- function(res, feat) {
+  
+  m.out <- readRDS(paste("/gstore/data/omni/neuroscience/AD/Astrocytes_AD_MS_PD_meta/AD_MS_PD_cellbender_integration/harmony_integration/another_run_after_removing_high_mito_clusters/subclustering/Cluster2_results/Cluster_2_astrocytes.m.out.harmony_2_donor_groupvar.", res, ".rds", sep=""))
+  m.out <- m.out$statistics
+  
+  m.out.with_symbols <- list()
+  
+  for (i in 1:length(m.out)){
+  tmp <- m.out[[i]]
+  tmp$ID <- rownames(tmp)
+  m.out.with_symbols[[i]] <- left_join(tmp, feat, by = "ID")
+  }
+
+return(m.out.with_symbols)  
+}
+```
+
+Let's see how harmony outputs look like
+
+```{r}
+
+harmony_gfap <- readRDS("/gstore/data/omni/neuroscience/AD/Astrocytes_AD_MS_PD_meta/AD_MS_PD_cellbender_integration/harmony_integration/another_run_after_removing_high_mito_clusters/subclustering/Cluster2_results/Cluster_2_astrocytes.onlychanHVG_for_PCA.with_harmony.rds")
+
+reducedDims(se_gfap) <- reducedDims(harmony_gfap)
+
+plotReducedDim(se_gfap,"UMAP_theta_2_donor_groupvar", point_size = 0.5, point_alpha = 0.5)
+
+### let's check out the clustering results
+
+clusters_gfap_res_0.2 <- readRDS("/gstore/data/omni/neuroscience/AD/Astrocytes_AD_MS_PD_meta/AD_MS_PD_cellbender_integration/harmony_integration/another_run_after_removing_high_mito_clusters/subclustering/Cluster2_results/Cluster_2_astrocytes.Clusters_res_harmony_2_donor_groupvar_0.2.rds")
+
+clusters_gfap_res_0.3 <- readRDS("/gstore/data/omni/neuroscience/AD/Astrocytes_AD_MS_PD_meta/AD_MS_PD_cellbender_integration/harmony_integration/another_run_after_removing_high_mito_clusters/subclustering/Cluster2_results/Cluster_2_astrocytes.Clusters_res_harmony_2_donor_groupvar_0.3.rds") 
+
+clusters_gfap_res_0.4 <- readRDS("/gstore/data/omni/neuroscience/AD/Astrocytes_AD_MS_PD_meta/AD_MS_PD_cellbender_integration/harmony_integration/another_run_after_removing_high_mito_clusters/subclustering/Cluster2_results/Cluster_2_astrocytes.Clusters_res_harmony_2_donor_groupvar_0.4.rds")
+
+se_gfap$subcluster_res_0.2 <- clusters_gfap_res_0.2$membership
+se_gfap$subcluster_res_0.3 <- clusters_gfap_res_0.3$membership
+se_gfap$subcluster_res_0.4 <- clusters_gfap_res_0.4$membership
+
+
+colors <- c(adjustcolor('darkgrey', alpha.f = 0.5), adjustcolor('aquamarine3', 0.8),  adjustcolor('chocolate2', alpha.f = 0.8), adjustcolor('cornflowerblue', 0.8))
+
+png("/gne/web/dev/apache/htdocs/people/novikovg/Astrocytes_meta/Harmony_AD_MS_PD_integration_2024/harmony_results_with_removing_mito_clusters/UMAP.GFAP_pos_astrocytes_subclustering.res_0.3.png", width = 2000,height=1400,res=300)
+plotReducedDim(se_gfap,"UMAP_theta_2_donor_groupvar", colour_by = "subcluster_res_0.3",point_size = 0.5, point_alpha = 0.5) + scale_color_manual(values = colors, name = "Cluster") + guides(colour = guide_legend(override.aes = list(size=4)))
+dev.off()
+
+png("/gne/web/dev/apache/htdocs/people/novikovg/Astrocytes_meta/Harmony_AD_MS_PD_integration_2024/harmony_results_with_removing_mito_clusters/UMAP.GFAP_pos_astrocytes_subclustering.res_0.4.png", width = 2000,height=1400,res=300)
+plotReducedDim(se_gfap,"UMAP_theta_2_donor_groupvar", colour_by = "subcluster_res_0.4",point_size = 0.5, point_alpha = 0.5) + scale_color_manual(values = colors, name = "Cluster") + guides(colour = guide_legend(override.aes = list(size=4)))
+
+dev.off()
+
+clusters_gfap_res_0.3_markers <- readRDS("/gstore/data/omni/neuroscience/AD/Astrocytes_AD_MS_PD_meta/AD_MS_PD_cellbender_integration/harmony_integration/another_run_after_removing_high_mito_clusters/subclustering/Cluster2_results/Cluster_2_astrocytes.m.out.harmony_2_donor_groupvar.0.3.rds")
+clusters_gfap_res_0.2_markers <- readRDS("/gstore/data/omni/neuroscience/AD/Astrocytes_AD_MS_PD_meta/AD_MS_PD_cellbender_integration/harmony_integration/another_run_after_removing_high_mito_clusters/subclustering/Cluster2_results/Cluster_2_astrocytes.m.out.harmony_2_donor_groupvar.0.2.rds")
+clusters_gfap_res_0.4_markers <- readRDS("/gstore/data/omni/neuroscience/AD/Astrocytes_AD_MS_PD_meta/AD_MS_PD_cellbender_integration/harmony_integration/another_run_after_removing_high_mito_clusters/subclustering/Cluster2_results/Cluster_2_astrocytes.m.out.harmony_2_donor_groupvar.0.4.rds")
+
+clusters_gfap_res_0.2_markers.with_symbols <- get_cluster_marker_symbols(0.2, feat)
+clusters_gfap_res_0.3_markers.with_symbols <- get_cluster_marker_symbols(0.3, feat)
+clusters_gfap_res_0.4_markers.with_symbols <- get_cluster_marker_symbols(0.4, feat)
+
+
+
+```
+
+subcluster_res_0.3 is the best resolution choice
+
+See if AD genes are restricted to a subcluster of GFAP+ astrocytes
+
+```{r}
+ad_candidates_up <- res_ad %>% dplyr::filter(adj_metap_up<=0.05 & n_up>=3 & dl_mu>0.5)
+
+library(batchelor)
+library(BiocParallel)
+out_gfap <- multiBatchNorm(se_gfap, normalize.all = TRUE, batch = se_gfap$studybatch, BPPARAM=MulticoreParam(workers = 14))
+
+out_gfap$AD_up <- colMeans(assay(out_gfap, 'logcounts')[ad_candidates_up$ID,],na.rm = TRUE)
+ library(wesanderson)
+plotReducedDim(out_gfap, dimred = "UMAP_theta_2_donor_groupvar", colour_by = "AD_up", point_size = 0.5, point_alpha = 0.5) + scale_colour_gradientn(colours = wes_palette("Zissou1", n = 5), name = "AD \nup \nscore \nlogcounts") + theme_classic() + theme(legend.title = element_text(size = 8))
+```
+
+
+Generate percentages plot
+```{r}
+coldata <- as.data.frame(colData(se_gfap))
+
+agg_cl <- readRDS("/gstore/data/omni/neuroscience/AD/Astrocytes_AD_MS_PD_meta/AD_MS_PD_cellbender_integration/harmony_integration/another_run_after_removing_high_mito_clusters/DEGs/aggregated_cells.AD_MS_PD.070724.DonoruniqueID_and_cluster.SE.rds") ## cain donors are fixed here
+
+cain_donors <- as.data.frame(colData(agg_cl)) %>% dplyr::filter(studybatch == "cain") %>% dplyr::select(donor) %>% unique
+
+coldata <- coldata %>% dplyr::filter(! donor %in% cain_donors$donor)
+
+
+coldata$diagnosis_harmonized_by_disease <-
+  ifelse(coldata$studybatch %in% c("jakel", "schirmer", "absinta", "bryois") & coldata$diagnosis_harmonized == "Control", "MS_Control",
+
+ifelse(coldata$studybatch %in% c("smajic","wang", "kamath") &
+coldata$diagnosis_harmonized == "Control", "PD_Control",
+
+ifelse(coldata$studybatch %in% c("cain", "morabito","gerrits", "smith", "SEA-AD", "liddelow") &
+coldata$diagnosis_harmonized == "Control", "AD_Control",
+coldata$diagnosis_harmonized)))
+coldata$diagnosis_harmonized_by_disease <- ifelse(coldata$diagnosis_harmonized == "RRMS", "MS", coldata$diagnosis_harmonized_by_disease)
+
+abundances <- table(coldata$subcluster_res_0.3,coldata$donorIdUnique)
+abundances <- unclass(abundances)
+
+extra.info <- coldata[match(colnames(abundances), coldata$donorIdUnique),]
+d <- DGEList(abundances, samples=extra.info)
+d = calcNormFactors(d)
+d= estimateCommonDisp(d, verbose=TRUE)
+
+norm_counts <- as.data.frame(t(d$counts))
+colnames(norm_counts) <- paste("Cluster ", colnames(norm_counts), sep="")
+norm_counts <- norm_counts %>% mutate(donorIdUnique = rownames(.))
+
+coldata_short <- as.data.frame(coldata) %>% dplyr::select(donorIdUnique,diagnosis_harmonized_by_disease,studybatch,apoe) %>% unique
+
+
+df_long_final <- left_join(norm_counts,coldata_short, by="donorIdUnique")
+percentages <- data.frame(matrix(nrow = dim(df_long_final)[1],ncol = dim(df_long_final)[2]))
+sums <- data.frame(clustersums=rowSums(df_long_final[,1:dim(norm_counts)[2]-1]),ident=df_long_final$donorIdUnique)
+
+
+
+for (clust in 1:length(levels(factor(coldata$subcluster_res_0.3)))) {
+  for (sample in 1:length(df_long_final[,clust])) {
+    percent <- (df_long_final[sample,clust]/sums[sample,1])*100
+    percentages[sample,clust]<- percent
+  }
+}
+
+
+cols2replace <- dim(norm_counts)[2]:(dim(norm_counts)[2]+dim(coldata_short)[2]-1)
+percentages[,cols2replace]<- df_long_final[,cols2replace]
+
+
+
+colnames(percentages) <-  colnames(df_long_final)
+df_long <- percentages %>%
+  pivot_longer(c(c(paste0("Cluster ",1:(dim(norm_counts)[2]-1)))))
+
+# level_order <- c("AD_Control","AD","MS_Control","MS","PD_Control","PD")
+level_order <- c("AD_Control","AD")
+df_long <- df_long %>% dplyr::filter(diagnosis_harmonized_by_disease %in% c("AD_Control","AD"))
+
+df_long$diagnosis_harmonized_by_disease <- factor(df_long$diagnosis_harmonized_by_disease,levels = level_order)
+
+df_long$name <- factor(df_long$name,levels =c(paste0("Cluster ",1:(dim(norm_counts)[2]-1))))
+
+# fill.codes <- c("white","darkgreen","white", "purple","white","mediumblue")
+# color.codes <- c("darkgreen","darkgreen","purple","purple","mediumblue","mediumblue")
+
+fill.codes <- c("white","darkgreen")
+color.codes <- c("darkgreen","darkgreen")
+
+zone <- levels(factor(df_long$diagnosis_harmonized_by_disease))
+
+png("/gne/web/dev/apache/htdocs/people/novikovg/Astrocytes_meta/Harmony_AD_MS_PD_integration_2024/harmony_results_with_removing_mito_clusters/Human_CellularityPlot_with_percentages.Cluster_2_AD_only.png",
+    width = 2700,height=800,res=300)
+ggplot(df_long, aes(x=diagnosis_harmonized_by_disease, y=value,fill=diagnosis_harmonized_by_disease,colour = diagnosis_harmonized_by_disease)) +
+  theme_classic() +
+  geom_jitter(color="darkgrey",width = 0.2,size=1,alpha=.5)  +
+  geom_boxplot(outlier.shape=NA,alpha=0.5)  +
+  facet_wrap(~factor(name),scales = "free", ncol=8) + xlab("Disease Label") +
+  theme(axis.text.x = element_text(angle=75,vjust = 0.5),axis.text.y = element_text(size=20)) +
+  ylab("Cellularity Percent") +
+  theme(strip.text.x = element_text(size = 12,face = "italic"),
+        axis.title=element_text(size=14,face="bold"),
+        legend.text = element_text(size=14),
+        legend.title = element_blank(),
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.text.y = element_text(size = 14)) +
+  scale_y_continuous(limits = c(0, 120), breaks = c(0, 50, 100))+
+  scale_fill_manual(values=setNames(fill.codes, zone))+
+  scale_color_manual(values=setNames(color.codes, zone))
+dev.off()
+
+
+# # Statistics ---------------------
+# 
+# sig.clusters <- list()
+# 
+# ## slipping cluster 4 because it's unidentified:
+# 
+# 
+# for(cluster in 1:length(levels(factor(coldata$subcluster_res_0.3)))){
+#   clusterName <- paste0("Cluster ",levels(factor(coldata$subcluster_res_0.3))[cluster])
+#   dataCluster <- df_long[which(df_long$name==clusterName),]
+#   # res <- kruskal.test(value ~ diagnosis_harmonized_by_disease, data = dataCluster)
+#   # # check if there is any significance
+#   # if(res$p.value < 0.05/length(levels(factor(coldata$clusters_res_0.5)))){ # bonferroni correction
+#   #   sig.clusters[[clusterName]] <- res
+#     
+#     # do a wilcox test to find which specific groups are different within cluster
+#     res.AD <- wilcox.test(dataCluster$value[which(dataCluster$diagnosis_harmonized_by_disease=="AD_Control")],
+#                           dataCluster$value[which(dataCluster$diagnosis_harmonized_by_disease=="AD")])
+#    
+#     sig.clusters[["AD"]][[clusterName]] <- res.AD
+#      
+#   }
+
+
+
+```
+
+
+Let's see if any of the 4 clusters are differential abundant in AD using Oleg's CLR approach
+
+Let's try to CLR adjusted approach
+```{r}
+
+agg_cl <- readRDS("/gstore/data/omni/neuroscience/AD/Astrocytes_AD_MS_PD_meta/AD_MS_PD_cellbender_integration/harmony_integration/another_run_after_removing_high_mito_clusters/DEGs/aggregated_cells.AD_MS_PD.070724.DonoruniqueID_and_cluster.SE.rds") ## cain donors are fixed here
+
+cain_donors <- as.data.frame(colData(agg_cl)) %>% dplyr::filter(studybatch == "cain") %>% dplyr::select(donor) %>% unique
+
+coldata <- as.data.frame(colData(se_gfap))
+coldata <- coldata %>% dplyr::filter(! donor %in% cain_donors$donor)
+
+abundances <- table(coldata$subcluster_res_0.4,coldata$donorIdUnique)
+abundances <- unclass(abundances) 
+
+extra.info <- coldata[match(colnames(abundances), coldata$donorIdUnique),]
+d <- DGEList(abundances, samples=extra.info)
+d = calcNormFactors(d)
+d= estimateCommonDisp(d, verbose=TRUE)
+
+norm_counts <- as.data.frame(t(d$counts)) 
+colnames(norm_counts) <- paste("Cluster ", colnames(norm_counts), sep="")
+norm_counts <- norm_counts %>% mutate(donorIdUnique = rownames(.))
+
+coldata$diagnosis_harmonized_by_disease <- 
+  ifelse(coldata$studybatch %in% c("jakel", "schirmer", "absinta", "bryois") & coldata$diagnosis_harmonized == "Control", "MS_Control",
+         
+ifelse(coldata$studybatch %in% c("smajic","wang", "kamath") &
+coldata$diagnosis_harmonized == "Control", "PD_Control",
+
+ifelse(coldata$studybatch %in% c("cain", "morabito","gerrits", "smith", "SEA-AD", "liddelow") &
+coldata$diagnosis_harmonized == "Control", "AD_Control",
+coldata$diagnosis_harmonized)))
+coldata$diagnosis_harmonized_by_disease <- ifelse(coldata$diagnosis_harmonized == "RRMS", "MS", coldata$diagnosis_harmonized_by_disease)
+
+coldata_short <- as.data.frame(coldata) %>% dplyr::select(donorIdUnique,diagnosis_harmonized_by_disease,studybatch) %>% unique
+
+proportions <- t(apply(norm_counts[,1:length(unique(coldata$subcluster_res_0.4))], 1, function(x) (x/sum(x)))) %>% as.data.frame()
+value_to_add_to_offset_zeros <- min(proportions[proportions > 0])
+proportions <- proportions + value_to_add_to_offset_zeros
+
+CLR_transf_proportions <- t(apply(proportions, 1, function(x) log((x/exp(mean(log(x)))) + 1))) %>% as.data.frame()
+
+CLR_transf_proportions$donorIdUnique <- rownames(CLR_transf_proportions)
+
+CLR_transf_proportions_full <- left_join(CLR_transf_proportions, coldata_short %>% dplyr::select(donorIdUnique, diagnosis_harmonized_by_disease, studybatch) %>% unique, by = "donorIdUnique")
+
+
+df_long <- CLR_transf_proportions_full %>% 
+  pivot_longer(c(c(paste0("Cluster ",1:(dim(norm_counts)[2]-1)))))
+
+level_order <- c("AD_Control","AD","MS_Control","MS","PD_Control","PD")
+df_long$diagnosis_harmonized_by_disease <- factor(df_long$diagnosis_harmonized_by_disease,levels = level_order) 
+
+df_long$name <- factor(df_long$name,levels =c(paste0("Cluster ",1:(dim(norm_counts)[2]-1))))
+
+fill.codes <- c("white","darkgreen","white", "purple","white","mediumblue")
+color.codes <- c("darkgreen","darkgreen","purple","purple","mediumblue","mediumblue")
+
+zone <- levels(factor(df_long$diagnosis_harmonized_by_disease))
+
+
+png("/gne/web/dev/apache/htdocs/people/novikovg/Astrocytes_meta/Harmony_AD_MS_PD_integration_2024/harmony_results_with_removing_mito_clusters/GFAP_pos_astrocytes_subclustering.res_0.4.with_CLR_transformed_proportions.png",
+    width = 6000,height=1400,res=300)
+ggplot(df_long, aes(x=diagnosis_harmonized_by_disease, y=value,fill=diagnosis_harmonized_by_disease,colour = diagnosis_harmonized_by_disease)) +
+  theme_classic() +
+  geom_jitter(color="darkgrey",width = 0.2,size=1,alpha=.5)  +
+  geom_boxplot(outlier.shape=NA,alpha=0.5)  +
+  facet_wrap(~factor(name),scales = "free", ncol=8) + xlab("Disease Label") +
+  theme(axis.text.x = element_text(angle=75,vjust = 0.5),axis.text.y = element_text(size=20)) +
+  ylab("CLR adjusted proportions") +  
+  theme(strip.text.x = element_text(size = 14,face = "italic"),
+        axis.title=element_text(size=14,face="bold"),
+        legend.text = element_text(size=14),
+        legend.title = element_text(size=14),
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank()) +
+  scale_y_continuous(limits = c(0, 7))+
+  scale_fill_manual(values=setNames(fill.codes, zone))+
+  scale_color_manual(values=setNames(color.codes, zone))
+dev.off()
+
+
+# Statistics ---------------------
+
+sig.clusters <- list()
+
+
+for(cluster in 1:length(levels(factor(coldata$subcluster_res_0.4)))){
+  clusterName <- paste0("Cluster ",levels(factor(coldata$subcluster_res_0.4))[cluster])
+  dataCluster <- df_long[which(df_long$name==clusterName),]
+  res <- kruskal.test(value ~ diagnosis_harmonized_by_disease, data = dataCluster)
+  # check if there is any significance
+  if(res$p.value < 0.05/length(levels(factor(coldata$subcluster_res_0.4)))){ # bonferroni correction
+    sig.clusters[[clusterName]] <- res
+    
+    # do a wilcox test to find which specific groups are different within cluster
+    res.AD <- wilcox.test(dataCluster$value[which(dataCluster$diagnosis_harmonized_by_disease=="AD_Control")],
+                          dataCluster$value[which(dataCluster$diagnosis_harmonized_by_disease=="AD")])
+    res.MS <- wilcox.test(dataCluster$value[which(dataCluster$diagnosis_harmonized_by_disease=="MS_Control")],
+                          dataCluster$value[which(dataCluster$diagnosis_harmonized_by_disease=="MS")])
+    res.PD <- wilcox.test(dataCluster$value[which(dataCluster$diagnosis_harmonized_by_disease=="PD_Control")],
+                          dataCluster$value[which(dataCluster$diagnosis_harmonized_by_disease=="PD")])
+   
+    sig.clusters[["AD"]][[clusterName]] <- res.AD
+    sig.clusters[["MS"]][[clusterName]] <- res.MS    
+    sig.clusters[["PD"]][[clusterName]] <- res.PD
+     
+     
+  }
+  
+}
+
+```
+ Cluster 1 -  0.054 p-value
+Let's see how cluster 1 looks across studies
+
+```{r}
+
+get_disease_and_cluster_specific_plot <- function(df_long, disease, cluster, col1) {
+  
+  df_long.filt <- df_long %>% dplyr::filter(diagnosis_harmonized_by_disease %in% c(paste(disease, "_Control", sep=""), disease)) %>% dplyr::filter(name == cluster)
+  
+p <- ggplot(df_long.filt, aes(x=diagnosis_harmonized_by_disease, y=value,fill=diagnosis_harmonized_by_disease,colour = diagnosis_harmonized_by_disease)) +
+  theme_classic() +
+  geom_jitter(color="darkgrey",width = 0.2,size=1,alpha=.5)  +
+  geom_boxplot(outlier.shape=NA,alpha=0.5) + xlab("Studies") +
+   facet_wrap(~studybatch, scales = "free", ncol=8) + 
+  theme(axis.text.x = element_text(angle=75,vjust = 0.5),axis.text.y = element_text(size=20)) +
+  ylab("Cellularity Percent") +  
+  theme(strip.text.x = element_text(size = 14,face = "italic"),
+        axis.title=element_text(size=10,face="italic"),
+        legend.text = element_text(size=14),
+        legend.title = element_text(size=14),
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank()) +
+  scale_color_manual(values = c(col1, col1)) +
+  scale_fill_manual(values = c("white", col1)) + ggtitle(paste(disease, cluster, sep=" ")) +   theme(plot.title = element_text(hjust = 0.5))
+  
+  return(p)
+}
+
+png("/gne/web/dev/apache/htdocs/people/novikovg/Astrocytes_meta/Harmony_AD_MS_PD_integration_2024/harmony_results_with_removing_mito_clusters/Cluster_2_GFAP_hi.per_study.png",
+    width = 4000,height=800,res=300)
+get_disease_and_cluster_specific_plot(df_long, "AD", "Cluster 1", "darkgreen")
+dev.off()
+```
+
+**************************************************************************************************
+Not for paper; Let's look at the cluster 2 integration with cell ONLY from AD studies
+
+```{r}
+get_cluster_marker_symbols <- function(res, feat) {
+  
+  m.out <- readRDS(paste("/gstore/data/omni/neuroscience/AD/Astrocytes_AD_MS_PD_meta/AD_MS_PD_cellbender_integration/harmony_integration/another_run_after_removing_high_mito_clusters/subclustering/Cluster2_results/only_AD_studies/Cluster_2_astrocytes.m.out.harmony_2_donor_groupvar.", res, ".only_AD_studies.rds", sep=""))
+  m.out <- m.out$statistics
+  
+  m.out.with_symbols <- list()
+  
+  for (i in 1:length(m.out)){
+  tmp <- m.out[[i]]
+  tmp$ID <- rownames(tmp)
+  m.out.with_symbols[[i]] <- left_join(tmp, feat, by = "ID")
+  }
+
+return(m.out.with_symbols)  
+}
+```
+
+
+```{r}
+
+harmony_gfap_ad_only <- readRDS("only_AD_studies/Cluster_2_astrocytes.onlychanHVG_for_PCA.with_harmony.only_AD_studies.rds")
+se_gfap_ad_only <- se_gfap[,se_gfap$studybatch %in% c("SEA_AD","cain","gerrits","liddelow","morabito", "smith")]
+
+reducedDims(se_gfap_ad_only) <- reducedDims(harmony_gfap_ad_only)
+
+cl_res_0.4_ad_only <- readRDS("only_AD_studies/Cluster_2_astrocytes.Clusters_res_harmony_2_donor_groupvar_0.4.only_AD_studies.rds")
+
+se_gfap_ad_only$subcluster_res_0.4 <- cl_res_0.4_ad_only$membership
+
+#colors <- c(adjustcolor('darkgrey', alpha.f = 0.5), adjustcolor('aquamarine3', 0.8),  adjustcolor('chocolate2', alpha.f = 0.8), adjustcolor('cornflowerblue', 0.8))
+
+colors <- c(adjustcolor('aquamarine3', 0.8),  adjustcolor('chocolate2', alpha.f = 0.8), adjustcolor('cornflowerblue', 0.8))
+
+png("/gne/web/dev/apache/htdocs/people/novikovg/Astrocytes_meta/Harmony_AD_MS_PD_integration_2024/harmony_results_with_removing_mito_clusters/UMAP.GFAP_pos_astrocytes_subclustering.res_0.4.only_AD_studies.png", width = 2000,height=1400,res=300)
+plotReducedDim(se_gfap_ad_only,"UMAP_theta_2_donor_groupvar", colour_by = "subcluster_res_0.4",point_size = 0.5, point_alpha = 0.5) + scale_color_manual(values = colors, name = "Cluster") + guides(colour = guide_legend(override.aes = list(size=4)))
+dev.off()
+
+cl_res_0.4_ad_only.markers <- readRDS("only_AD_studies/Cluster_2_astrocytes.m.out.harmony_2_donor_groupvar.0.4.only_AD_studies.rds")
+
+cl_res_0.4_ad_only.markers.with_symbols <- get_cluster_marker_symbols(0.4, feat)
+
+
+```
+
+Test the 4 clusters for differential abundance in AD only 
+
+```{r}
+coldata <- colData(se_gfap_ad_only)
+coldata$diagnosis_harmonized_by_disease <- 
+  ifelse(coldata$studybatch %in% c("jakel", "schirmer", "absinta", "bryois") & coldata$diagnosis_harmonized == "Control", "MS_Control",
+         
+ifelse(coldata$studybatch %in% c("smajic","wang", "kamath") &
+coldata$diagnosis_harmonized == "Control", "PD_Control",
+
+ifelse(coldata$studybatch %in% c("cain", "morabito","gerrits", "smith", "SEA-AD", "liddelow") &
+coldata$diagnosis_harmonized == "Control", "AD_Control",
+coldata$diagnosis_harmonized)))
+coldata$diagnosis_harmonized_by_disease <- ifelse(coldata$diagnosis_harmonized == "RRMS", "MS", coldata$diagnosis_harmonized_by_disease)
+
+
+
+abundances <- table(coldata$subcluster_res_0.4,coldata$donorIdUnique)
+abundances <- unclass(abundances) 
+
+extra.info <- coldata[match(colnames(abundances), coldata$donorIdUnique),]
+d <- DGEList(abundances, samples=extra.info)
+d = calcNormFactors(d)
+d= estimateCommonDisp(d, verbose=TRUE)
+
+norm_counts <- as.data.frame(t(d$counts)) 
+colnames(norm_counts) <- paste("Cluster ", colnames(norm_counts), sep="")
+norm_counts <- norm_counts %>% mutate(donorIdUnique = rownames(.))
+
+coldata_short <- as.data.frame(coldata) %>% dplyr::select(donorIdUnique,diagnosis_harmonized_by_disease,studybatch,apoe) %>% unique
+
+
+df_long_final <- left_join(norm_counts,coldata_short, by="donorIdUnique") 
+percentages <- data.frame(matrix(nrow = dim(df_long_final)[1],ncol = dim(df_long_final)[2]))
+sums <- data.frame(clustersums=rowSums(df_long_final[,1:dim(norm_counts)[2]-1]),ident=df_long_final$donorIdUnique)
+
+
+
+for (clust in 1:length(levels(factor(coldata$subcluster_res_0.4)))) {
+  for (sample in 1:length(df_long_final[,clust])) {
+    percent <- (df_long_final[sample,clust]/sums[sample,1])*100
+    percentages[sample,clust]<- percent
+  }
+}
+
+
+cols2replace <- dim(norm_counts)[2]:(dim(norm_counts)[2]+dim(coldata_short)[2]-1)
+percentages[,cols2replace]<- df_long_final[,cols2replace]
+
+
+
+colnames(percentages) <-  colnames(df_long_final)
+df_long <- percentages %>% 
+  pivot_longer(c(c(paste0("Cluster ",1:(dim(norm_counts)[2]-1)))))
+
+level_order <- c("AD_Control","AD","MS_Control","MS","PD_Control","PD")
+df_long$diagnosis_harmonized_by_disease <- factor(df_long$diagnosis_harmonized_by_disease,levels = level_order) 
+
+df_long$name <- factor(df_long$name,levels =c(paste0("Cluster ",1:(dim(norm_counts)[2]-1))))
+
+fill.codes <- c("white","darkgreen","white", "purple","white","mediumblue")
+color.codes <- c("darkgreen","darkgreen","purple","purple","mediumblue","mediumblue")
+
+zone <- levels(factor(df_long$diagnosis_harmonized_by_disease))
+
+png("/gne/web/dev/apache/htdocs/people/novikovg/Astrocytes_meta/Harmony_AD_MS_PD_integration_2024/harmony_results_with_removing_mito_clusters/Human_CellularityPlot_with_percentages.png",
+    width = 6000,height=1400,res=300)
+ggplot(df_long, aes(x=diagnosis_harmonized_by_disease, y=value,fill=diagnosis_harmonized_by_disease,colour = diagnosis_harmonized_by_disease)) +
+  theme_classic() +
+  geom_jitter(color="darkgrey",width = 0.2,size=1,alpha=.5)  +
+  geom_boxplot(outlier.shape=NA,alpha=0.5)  +
+  facet_wrap(~factor(name),scales = "free", ncol=8) + xlab("Disease Label") +
+  theme(axis.text.x = element_text(angle=75,vjust = 0.5),axis.text.y = element_text(size=20)) +
+  ylab("Cellularity Percent") +  
+  theme(strip.text.x = element_text(size = 14,face = "italic"),
+        axis.title=element_text(size=14,face="bold"),
+        legend.text = element_text(size=14),
+        legend.title = element_text(size=14),
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank()) +
+  scale_y_continuous(limits = c(0, 100), breaks = c(0, 25, 50,75))+
+  scale_fill_manual(values=setNames(fill.codes, zone))+
+  scale_color_manual(values=setNames(color.codes, zone))
+dev.off()
+
+
+# Statistics ---------------------
+
+sig.clusters <- list()
+
+## slipping cluster 4 because it's unidentified:
+
+
+for(cluster in 1:length(levels(factor(coldata$subcluster_res_0.3)))){
+  clusterName <- paste0("Cluster ",levels(factor(coldata$subcluster_res_0.3))[cluster])
+  dataCluster <- df_long[which(df_long$name==clusterName),]
+  # res <- kruskal.test(value ~ diagnosis_harmonized_by_disease, data = dataCluster)
+  # # check if there is any significance
+  # if(res$p.value < 0.05/length(levels(factor(coldata$clusters_res_0.5)))){ # bonferroni correction
+  #   sig.clusters[[clusterName]] <- res
+    
+    # do a wilcox test to find which specific groups are different within cluster
+    res.AD <- wilcox.test(dataCluster$value[which(dataCluster$diagnosis_harmonized_by_disease=="AD_Control")],
+                          dataCluster$value[which(dataCluster$diagnosis_harmonized_by_disease=="AD")])
+    res.MS <- wilcox.test(dataCluster$value[which(dataCluster$diagnosis_harmonized_by_disease=="MS_Control")],
+                          dataCluster$value[which(dataCluster$diagnosis_harmonized_by_disease=="MS")])
+    res.PD <- wilcox.test(dataCluster$value[which(dataCluster$diagnosis_harmonized_by_disease=="PD_Control")],
+                          dataCluster$value[which(dataCluster$diagnosis_harmonized_by_disease=="PD")])
+   
+    sig.clusters[["AD"]][[clusterName]] <- res.AD
+    sig.clusters[["MS"]][[clusterName]] <- res.MS    
+    sig.clusters[["PD"]][[clusterName]] <- res.PD
+     
+  }
+
+```
+
