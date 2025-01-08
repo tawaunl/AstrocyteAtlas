@@ -1,0 +1,698 @@
+---
+title: "Process CellBender counts from Caspar"
+output: 
+  html_document:
+    toc: true # table of content true
+    toc_depth: 3  # upto three depths of headings (specified by #, ## and ###)
+    toc_float: true
+    number_sections: true  ## if you want number sections at each table header
+    theme: united  # many options for theme, this one is my favorite.
+    highlight: tango  # specifies the syntax highlighting style
+---
+
+# Load Libraries
+
+```{r Load Libraries, message=FALSE, warning=FALSE}
+pkgs <- c("Seurat","SingleCellExperiment","ggplot2","R.utils",
+          "sctransform","future","harmony","Matrix","patchwork",
+          "glmGamPoi","cowplot","scater","gridExtra","RColorBrewer","dplyr",
+          "gtable","ggpubr","ggrepel","wesanderson","edgeR","tidyr","scran","scater",
+          "metaGP","gpExtra")
+for(p in pkgs){
+  suppressPackageStartupMessages(library(p, quietly=TRUE,character.only=TRUE))
+}
+options(future.globals.maxSize= 1e+11)
+data.dir <- "/gstore/data/project/neurodegen_adapt_immune/02_tcell_meta_analysis/00_data/00_cellbender/"
+main.dir <- "/gstore/data/project/neurodegen_meta/data/cellbender/"
+datasets <- c("ngs2330","ngs2453","ngs2664","ngs2722","ngs3033" ,"ngs3111","ngs3971")
+gac <- installedGeneAnnotationCollection("Neuroinflammation")
+mouseHipp <- gac$`Mouse Hippocampus scRNASeq Markers`
+ga.ctm <- geneSetList(mouseHipp) # "cell type markers"
+ga.ctm <- lapply(ga.ctm, unlist) %>% lapply(unname)
+
+
+```
+
+## Set up funtions for analysis
+<details>
+<summary>Click for to see code</summary>
+```{r Functions}
+scoreCells <- function(data,seurat=FALSE,geneSetList){
+for (gene_set in names(geneSetList)) {
+score_gene_set <- geneSetList[[gene_set]]
+score_gene_set <- intersect(score_gene_set,rownames(data))
+if(seurat==FALSE){
+scores_by_cell <- colMeans(assay(data, 'logcounts')[score_gene_set,],na.rm = TRUE)
+}
+if(seurat==TRUE){
+scores_by_cell <- colMeans(assay(as.SingleCellExperiment(data), 'logcounts')[score_gene_set,],na.rm = TRUE)
+}
+data[[gene_set]] <- scores_by_cell
+}
+return(data)
+}
+
+runSeurat <- function(obj){
+obj <- NormalizeData(obj,verbose=FALSE)
+obj <- ScaleData(object = obj, verbose=FALSE)
+obj <- FindVariableFeatures(obj)
+obj <- RunPCA(obj, npcs = 30,verbose=FALSE)
+obj <- FindNeighbors(obj, reduction = "pca",dims=1:20,verbose=FALSE)
+obj <- FindClusters(obj, resolution = 0.5,verbose=FALSE)
+obj <- RunUMAP(obj,reduction= "pca",dims=1:20,verbose=FALSE)
+print("Seurat Pipeline Finished!")
+return(obj)
+}
+```
+</details>
+
+# NGS2330 - Shen Cuprizone
+
+```{r Shen Cuprizone, message=FALSE, warning=FALSE, out.width="100%",fig.show='hold'}
+# load data 
+data <- readRDS(paste0(main.dir,"NGS2330/NGS2330_merged_labeled.rds"))
+data <- scoreCells(data,geneSetList = ga.ctm)
+
+p1 <- plotUMAP(data,colour_by= "FineLabels",text_by="FineLabels",point_size=1) + theme_void() + ggtitle("SingleR Labels") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold"),legend.position = "none")
+p2 <- plotUMAP(data,colour_by= "astrocyte",point_size=1) + theme_void() + ggtitle("Astrocyte Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd")) + labs(colour = "Astrocyte")
+p3 <- plotUMAP(data,colour_by= "microglia",point_size=1) + theme_void() + ggtitle("Microglia Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+ labs(colour = "Microglia")
+p4 <- plotUMAP(data,colour_by= "oligodendrocyte",point_size=1) + theme_void() + ggtitle("Oligodendrocyte Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Oligodendrocyte")
+p5 <- plotUMAP(data,colour_by= "OPC",point_size=1) + theme_void() + ggtitle("OPC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "OPC")
+p6 <- plotUMAP(data,colour_by= "VSMC",point_size=1) + theme_void() + ggtitle("VSMC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "VSMC")
+p7 <- plotUMAP(data,colour_by= "BMEC",point_size=1) + theme_void() + ggtitle("BMEC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "BMEC")
+
+p1
+grid.arrange(p2,p3,p4,p5,p6,p7, nrow=2)
+
+```
+
+## NGS2330 Astrocytes only
+
+Astrocytes seem to be labeled correctly lets look just at the astrocyte
+
+```{r Astrocyte only data, message=FALSE, warning=FALSE,out.width="100%", fig.show='hold'}
+astros <- readRDS(paste0(main.dir,"NGS2330/Astrocytes.RDS"))
+
+astros.seurat <- as.Seurat(astros)
+astros.seurat <- DietSeurat(astros.seurat)
+astros.seurat <- runSeurat(astros.seurat)
+
+astros.seurat <- scoreCells(astros.seurat,seurat = TRUE,geneSetList = ga.ctm)
+
+p1 <- DimPlot(astros.seurat, group.by = "seurat_clusters", label = TRUE,
+              repel = TRUE, pt.size = 1 ) + theme_void() +
+  labs(title = "Seurat Clusters Astrocytes",
+       caption = paste0("Total Astrocytes = ",dim(astros.seurat)[2])) +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold"),
+        plot.caption = element_text(size=14,face = "italic")) 
+p2 <- FeaturePlot(astros.seurat,features= "astrocyte",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Astrocyte Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Astrocyte")
+p3 <- FeaturePlot(astros.seurat,features= "microglia",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Microglia Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Microglia")
+p4 <- FeaturePlot(astros.seurat,features= "oligodendrocyte", reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Oligodendrocyte Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Oligodendrocyte")
+p5 <- FeaturePlot(astros.seurat,features= "OPC", reduction="umap", pt.size = 1) + theme_void() +
+  ggtitle("OPC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "OPC")
+p6 <- FeaturePlot(astros.seurat,features= "VSMC", reduction="umap", pt.size = 1) + theme_void() +
+  ggtitle("VSMC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "VSMC")
+p7 <- FeaturePlot(astros.seurat,features= "BMEC", reduction="umap", pt.size = 1) + theme_void() +
+  ggtitle("BMEC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "BMEC")
+p1
+grid.arrange(p2,p3,p4,p5,p6,p7, nrow=2)
+# lets get rid of high scoring cells for micro
+astros.seurat <- subset(astros.seurat,subset= microglia < 0.5)
+# add metadata fields of interest
+astros.seurat$BrainRegion <- "Corpus Callosum"
+astros.seurat$StudyName <- "Shen Cuprizone"
+astros.seurat$Model <- factor(astros.seurat$Condition) # levels ( Control, Cuprizone4+3, Cuprizone_4w)
+levels(astros.seurat$Model) <- c("Control","Cuprizone","Cuprizone")
+astros.seurat$Disease <- factor(astros.seurat$Condition)
+levels(astros.seurat$Disease) <- c("MS_control","MS","MS")
+saveRDS(astros.seurat,paste0(main.dir,"NGS2330/Astrocytes.RDS"))
+```
+
+# NGS2453 - Lee P2APP.1
+```{r Lee PS2APP.1, fig.show='hold', message=FALSE, warning=FALSE, out.width="100%"}
+# load data 
+data <- readRDS(paste0(main.dir,"NGS2453/NGS2453_merged_labeled.rds"))
+data <- scoreCells(data,geneSetList = ga.ctm)
+
+p1 <- plotUMAP(data,colour_by= "FineLabels",text_by="FineLabels",point_size=1) + theme_void() + ggtitle("SingleR Labels") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold"),legend.position = "none")
+p2 <- plotUMAP(data,colour_by= "astrocyte",point_size=1) + theme_void() + ggtitle("Astrocyte Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd")) + labs(colour = "Astrocyte")
+p3 <- plotUMAP(data,colour_by= "microglia",point_size=1) + theme_void() + ggtitle("Microglia Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+ labs(colour = "Microglia")
+p4 <- plotUMAP(data,colour_by= "oligodendrocyte",point_size=1) + theme_void() + ggtitle("Oligodendrocyte Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Oligodendrocyte")
+p5 <- plotUMAP(data,colour_by= "OPC",point_size=1) + theme_void() + ggtitle("OPC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "OPC")
+p6 <- plotUMAP(data,colour_by= "VSMC",point_size=1) + theme_void() + ggtitle("VSMC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "VSMC")
+p7 <- plotUMAP(data,colour_by= "BMEC",point_size=1) + theme_void() + ggtitle("BMEC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "BMEC")
+
+p1
+grid.arrange(p2,p3,p4,p5,p6,p7, nrow=2)
+
+```
+
+## NGS2453 Astrocytes only
+
+```{r NGS2453 strocyte only data, fig.show='hold', message=FALSE, warning=FALSE, out.width="100%"}
+astros <- readRDS(paste0(main.dir,"NGS2453/NGS2453_Astrocytes_merged_labeled.rds"))
+
+astros.seurat <- as.Seurat(astros)
+astros.seurat <- DietSeurat(astros.seurat)
+astros.seurat <- runSeurat(astros.seurat)
+
+astros.seurat <- scoreCells(astros.seurat,seurat = TRUE,geneSetList = ga.ctm)
+
+p1 <- DimPlot(astros.seurat, group.by = "seurat_clusters", label = TRUE,
+              repel = TRUE, pt.size = 1 ) + theme_void() +
+  labs(title = "Seurat Clusters Astrocytes",
+       caption = paste0("Total Astrocytes = ",dim(astros.seurat)[2])) +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold"),
+        plot.caption = element_text(size=14,face = "italic")) 
+p2 <- FeaturePlot(astros.seurat,features= "astrocyte",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Astrocyte Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Astrocyte")
+p3 <- FeaturePlot(astros.seurat,features= "microglia",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Microglia Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Microglia")
+p4 <- FeaturePlot(astros.seurat,features= "oligodendrocyte", reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Oligodendrocyte Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Oligodendrocyte")
+p5 <- FeaturePlot(astros.seurat,features= "OPC", reduction="umap", pt.size = 1) + theme_void() +
+  ggtitle("OPC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "OPC")
+p6 <- FeaturePlot(astros.seurat,features= "VSMC", reduction="umap", pt.size = 1) + theme_void() +
+  ggtitle("VSMC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "VSMC")
+p7 <- FeaturePlot(astros.seurat,features= "BMEC", reduction="umap", pt.size = 1) + theme_void() +
+  ggtitle("BMEC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "BMEC")
+p1
+grid.arrange(p2,p3,p4,p5,p6,p7, nrow=2)
+
+# lets get rid of high scoring cells for micro
+astros.seurat <- subset(astros.seurat,subset= microglia < 0.5)
+
+# add metadata fields of interest
+astros.seurat$BrainRegion <- "Hippocampus"
+astros.seurat$StudyName <- "Lee PS2APP.1"
+astros.seurat$Model <- factor(astros.seurat$Condition) # levels ( PS2APP, Wildtype)
+levels(astros.seurat$Model) <- c("PS2APP","Control")
+astros.seurat$Disease <- factor(astros.seurat$Condition)
+levels(astros.seurat$Disease) <- c("AD","AD_control")
+saveRDS(astros.seurat,paste0(main.dir,"NGS2453/NGS2453_Astrocytes_Seurat.rds"))
+```
+
+# NGS2664 - Lee P2APP.2
+```{r Lee PS2APP.2, fig.show='hold', message=FALSE, warning=FALSE, out.width="100%"}
+# load data 
+data <- readRDS(paste0(main.dir,"NGS2664/NGS2664_merged_labeled.rds"))
+data <- scoreCells(data,geneSetList = ga.ctm)
+
+p1 <- plotUMAP(data,colour_by= "FineLabels",text_by="FineLabels",point_size=1) + theme_void() + ggtitle("SingleR Labels") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold"),legend.position = "none")
+p2 <- plotUMAP(data,colour_by= "astrocyte",point_size=1) + theme_void() + ggtitle("Astrocyte Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd")) + labs(colour = "Astrocyte")
+p3 <- plotUMAP(data,colour_by= "microglia",point_size=1) + theme_void() + ggtitle("Microglia Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+ labs(colour = "Microglia")
+p4 <- plotUMAP(data,colour_by= "oligodendrocyte",point_size=1) + theme_void() + ggtitle("Oligodendrocyte Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Oligodendrocyte")
+p5 <- plotUMAP(data,colour_by= "OPC",point_size=1) + theme_void() + ggtitle("OPC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "OPC")
+p6 <- plotUMAP(data,colour_by= "VSMC",point_size=1) + theme_void() + ggtitle("VSMC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "VSMC")
+p7 <- plotUMAP(data,colour_by= "BMEC",point_size=1) + theme_void() + ggtitle("BMEC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "BMEC")
+
+p1
+grid.arrange(p2,p3,p4,p5,p6,p7, nrow=2)
+
+```
+
+## NGS2664 Astrocytes only
+
+```{r NGS2664 Astrocyte only data, fig.show='hold', message=FALSE, warning=FALSE, out.width="100%"}
+astros <- readRDS(paste0(main.dir,"NGS2664/NGS2664_Astrocytes_merged_labeled.rds"))
+
+astros.seurat <- as.Seurat(astros)
+astros.seurat <- DietSeurat(astros.seurat)
+astros.seurat <- runSeurat(astros.seurat)
+
+astros.seurat <- scoreCells(astros.seurat,seurat = TRUE,geneSetList = ga.ctm)
+
+p1 <- DimPlot(astros.seurat, group.by = "seurat_clusters", label = TRUE,
+              repel = TRUE, pt.size = 1 ) + theme_void() +
+  labs(title = "Seurat Clusters Astrocytes",
+       caption = paste0("Total Astrocytes = ",dim(astros.seurat)[2])) +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold"),
+        plot.caption = element_text(size=14,face = "italic")) 
+p2 <- FeaturePlot(astros.seurat,features= "astrocyte",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Astrocyte Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Astrocyte")
+p3 <- FeaturePlot(astros.seurat,features= "microglia",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Microglia Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Microglia")
+p4 <- FeaturePlot(astros.seurat,features= "oligodendrocyte", reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Oligodendrocyte Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Oligodendrocyte")
+p5 <- FeaturePlot(astros.seurat,features= "OPC", reduction="umap", pt.size = 1) + theme_void() +
+  ggtitle("OPC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "OPC")
+p6 <- FeaturePlot(astros.seurat,features= "VSMC", reduction="umap", pt.size = 1) + theme_void() +
+  ggtitle("VSMC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "VSMC")
+p7 <- FeaturePlot(astros.seurat,features= "BMEC", reduction="umap", pt.size = 1) + theme_void() +
+  ggtitle("BMEC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "BMEC")
+p1
+grid.arrange(p2,p3,p4,p5,p6,p7, nrow=2)
+
+# lets get rid of high scoring cells for micro
+astros.seurat <- subset(astros.seurat,subset= microglia < 0.5)
+
+# add metadata fields of interest
+astros.seurat$BrainRegion <- "Hippocampus"
+astros.seurat$StudyName <- "Lee PS2APP.2"
+astros.seurat$Model <- factor(astros.seurat$Condition) # levels ( PS2APP, Wildtype)
+levels(astros.seurat$Model) <- c("PS2APP","Control")
+astros.seurat$Disease <- factor(astros.seurat$Condition)
+levels(astros.seurat$Disease) <- c("AD","AD_control")
+saveRDS(astros.seurat,paste0(main.dir,"NGS2664/NGS2664_Astrocytes_Seurat.rds"))
+```
+
+# NGS2722 - Lee P2APP/P301L
+```{r Lee P2APP/P301L, fig.show='hold', message=FALSE, warning=FALSE, out.width="100%"}
+# load data 
+data <- readRDS(paste0(main.dir,"NGS2722/NGS2722_merged_labeled.rds"))
+data <- scoreCells(data,geneSetList = ga.ctm)
+
+p1 <- plotUMAP(data,colour_by= "FineLabels",text_by="FineLabels",point_size=1) + theme_void() + ggtitle("SingleR Labels") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold"),legend.position = "none")
+p2 <- plotUMAP(data,colour_by= "astrocyte",point_size=1) + theme_void() + ggtitle("Astrocyte Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd")) + labs(colour = "Astrocyte")
+p3 <- plotUMAP(data,colour_by= "microglia",point_size=1) + theme_void() + ggtitle("Microglia Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+ labs(colour = "Microglia")
+p4 <- plotUMAP(data,colour_by= "oligodendrocyte",point_size=1) + theme_void() + ggtitle("Oligodendrocyte Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Oligodendrocyte")
+p5 <- plotUMAP(data,colour_by= "OPC",point_size=1) + theme_void() + ggtitle("OPC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "OPC")
+p6 <- plotUMAP(data,colour_by= "VSMC",point_size=1) + theme_void() + ggtitle("VSMC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "VSMC")
+p7 <- plotUMAP(data,colour_by= "BMEC",point_size=1) + theme_void() + ggtitle("BMEC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "BMEC")
+
+p1
+grid.arrange(p2,p3,p4,p5,p6,p7, nrow=2)
+
+```
+
+## NGS2722 Astrocytes only
+
+```{r NGS2722 Astrocyte only data, fig.show='hold', message=FALSE, warning=FALSE, out.width="100%"}
+astros <- readRDS(paste0(main.dir,"NGS2722/NGS2722_Astrocytes_merged_labeled.rds"))
+
+astros.seurat <- as.Seurat(astros)
+astros.seurat <- DietSeurat(astros.seurat)
+astros.seurat <- runSeurat(astros.seurat)
+
+astros.seurat <- scoreCells(astros.seurat,seurat = TRUE,geneSetList = ga.ctm)
+
+p1 <- DimPlot(astros.seurat, group.by = "seurat_clusters", label = TRUE,
+              repel = TRUE, pt.size = 1 ) + theme_void() +
+  labs(title = "Seurat Clusters Astrocytes",
+       caption = paste0("Total Astrocytes = ",dim(astros.seurat)[2])) +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold"),
+        plot.caption = element_text(size=14,face = "italic")) 
+p2 <- FeaturePlot(astros.seurat,features= "astrocyte",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Astrocyte Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Astrocyte")
+p3 <- FeaturePlot(astros.seurat,features= "microglia",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Microglia Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Microglia")
+p4 <- FeaturePlot(astros.seurat,features= "oligodendrocyte", reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Oligodendrocyte Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Oligodendrocyte")
+p5 <- FeaturePlot(astros.seurat,features= "OPC", reduction="umap", pt.size = 1) + theme_void() +
+  ggtitle("OPC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "OPC")
+p6 <- FeaturePlot(astros.seurat,features= "VSMC", reduction="umap", pt.size = 1) + theme_void() +
+  ggtitle("VSMC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "VSMC")
+p7 <- FeaturePlot(astros.seurat,features= "BMEC", reduction="umap", pt.size = 1) + theme_void() +
+  ggtitle("BMEC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "BMEC")
+p1
+grid.arrange(p2,p3,p4,p5,p6,p7, nrow=2)
+
+# lets get rid of high scoring cells for micro
+astros.seurat <- subset(astros.seurat,subset= microglia < 0.5)
+
+# add metadata fields of interest
+astros.seurat$BrainRegion <- "Hippocampus"
+astros.seurat$StudyName <- "Lee P2APP/P301L"
+astros.seurat$Model <- factor(astros.seurat$Condition) 
+levels(astros.seurat$Model) <- c("P301L","P301L_TREM2KO","PS2APP","PS2APP_P301L","PS2APP_P301L_TREM2KO","TREM2KO","Control")
+astros.seurat$Disease <- factor(astros.seurat$Condition)
+levels(astros.seurat$Disease) <- c("AD","AD_TREM2KO","AD","AD","AD_TREM2KO","TREM2KO","AD_control")
+saveRDS(astros.seurat,paste0(main.dir,"NGS2722/NGS2722_Astrocytes_Seurat.rds"))
+astros.seurat <- subset(astros.seurat,subset= Disease=="AD" | Disease=="AD_control")
+saveRDS(astros.seurat,paste0(main.dir,"NGS2722/NGS2722_Astrocytes_Seurat_noTREM2KO.rds"))
+
+```
+
+# NGS3033 - Wang P301S
+```{r Wang P301S, fig.show='hold', message=FALSE, warning=FALSE, out.width="100%"}
+# load data 
+data <- readRDS(paste0(main.dir,"NGS3033/NGS3033_merged_labeled.rds"))
+data <- scoreCells(data,geneSetList = ga.ctm)
+
+p1 <- plotUMAP(data,colour_by= "FineLabels",text_by="FineLabels",point_size=1) + theme_void() + ggtitle("SingleR Labels") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold"),legend.position = "none")
+p2 <- plotUMAP(data,colour_by= "astrocyte",point_size=1) + theme_void() + ggtitle("Astrocyte Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd")) + labs(colour = "Astrocyte")
+p3 <- plotUMAP(data,colour_by= "microglia",point_size=1) + theme_void() + ggtitle("Microglia Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+ labs(colour = "Microglia")
+p4 <- plotUMAP(data,colour_by= "oligodendrocyte",point_size=1) + theme_void() + ggtitle("Oligodendrocyte Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Oligodendrocyte")
+p5 <- plotUMAP(data,colour_by= "OPC",point_size=1) + theme_void() + ggtitle("OPC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "OPC")
+p6 <- plotUMAP(data,colour_by= "VSMC",point_size=1) + theme_void() + ggtitle("VSMC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "VSMC")
+p7 <- plotUMAP(data,colour_by= "BMEC",point_size=1) + theme_void() + ggtitle("BMEC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "BMEC")
+
+p1
+grid.arrange(p2,p3,p4,p5,p6,p7, nrow=2)
+
+```
+
+## NGS3033 Astrocytes only
+
+```{r NGS3033 Astrocyte only data, fig.show='hold', message=FALSE, warning=FALSE, out.width="100%"}
+astros <- readRDS(paste0(main.dir,"NGS3033/NGS3033_Astrocytes_merged_labeled.rds"))
+
+astros.seurat <- as.Seurat(astros)
+astros.seurat <- DietSeurat(astros.seurat)
+astros.seurat <- runSeurat(astros.seurat)
+
+astros.seurat <- scoreCells(astros.seurat,seurat = TRUE,geneSetList = ga.ctm)
+
+p1 <- DimPlot(astros.seurat, group.by = "seurat_clusters", label = TRUE,
+              repel = TRUE, pt.size = 1 ) + theme_void() +
+  labs(title = "Seurat Clusters Astrocytes",
+       caption = paste0("Total Astrocytes = ",dim(astros.seurat)[2])) +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold"),
+        plot.caption = element_text(size=14,face = "italic")) 
+p2 <- FeaturePlot(astros.seurat,features= "astrocyte",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Astrocyte Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Astrocyte")
+p3 <- FeaturePlot(astros.seurat,features= "microglia",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Microglia Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Microglia")
+p4 <- FeaturePlot(astros.seurat,features= "oligodendrocyte", reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Oligodendrocyte Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Oligodendrocyte")
+p5 <- FeaturePlot(astros.seurat,features= "OPC", reduction="umap", pt.size = 1) + theme_void() +
+  ggtitle("OPC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "OPC")
+p6 <- FeaturePlot(astros.seurat,features= "VSMC", reduction="umap", pt.size = 1) + theme_void() +
+  ggtitle("VSMC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "VSMC")
+p7 <- FeaturePlot(astros.seurat,features= "BMEC", reduction="umap", pt.size = 1) + theme_void() +
+  ggtitle("BMEC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "BMEC")
+p1
+grid.arrange(p2,p3,p4,p5,p6,p7, nrow=2)
+
+# lets get rid of high scoring cells for micro
+astros.seurat <- subset(astros.seurat,subset= microglia < 0.5)
+
+# add metadata fields of interest
+astros.seurat$BrainRegion <- "Hippocampus"
+astros.seurat$StudyName <- "Wang P301S"
+astros.seurat$Model <- factor(astros.seurat$Condition) # levels ( "TPL2_KD_TauP301S_Negative", "TPL2_KD_TauP301S_Positive",
+#.                                                                "TPL2_WT_TauP301S_Negative", "TPL2_WT_TauP301S_Positive")
+levels(astros.seurat$Model) <- c("TPL2KD", "TPL2KD_TauP301S",
+                                 "Control", "TauP301S")
+astros.seurat$Disease <- factor(astros.seurat$Condition)
+levels(astros.seurat$Disease) <- c("TPL2KD","AD_TPL2KD","AD_control","AD")
+saveRDS(astros.seurat,paste0(main.dir,"NGS3033/NGS3033_Astrocytes_Seurat.rds"))
+astros.seurat <- subset(astros.seurat,subset= Disease=="AD" | Disease=="AD_control")
+saveRDS(astros.seurat,paste0(main.dir,"NGS3033/NGS3033_Astrocytes_Seurat_noTPL2KD.rds"))
+```
+
+# NGS3111 - Shen Lysolecithin
+```{r Shen Lysolecithin, fig.show='hold', message=FALSE, warning=FALSE, out.width="100%"}
+# load data 
+data <- readRDS(paste0(main.dir,"NGS3111/NGS3111_merged_labeled.rds"))
+data <- scoreCells(data,geneSetList = ga.ctm)
+
+p1 <- plotUMAP(data,colour_by= "FineLabels",text_by="FineLabels",point_size=1) + theme_void() + ggtitle("SingleR Labels") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold"),legend.position = "none")
+p2 <- plotUMAP(data,colour_by= "astrocyte",point_size=1) + theme_void() + ggtitle("Astrocyte Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd")) + labs(colour = "Astrocyte")
+p3 <- plotUMAP(data,colour_by= "microglia",point_size=1) + theme_void() + ggtitle("Microglia Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+ labs(colour = "Microglia")
+p4 <- plotUMAP(data,colour_by= "oligodendrocyte",point_size=1) + theme_void() + ggtitle("Oligodendrocyte Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Oligodendrocyte")
+p5 <- plotUMAP(data,colour_by= "OPC",point_size=1) + theme_void() + ggtitle("OPC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "OPC")
+p6 <- plotUMAP(data,colour_by= "VSMC",point_size=1) + theme_void() + ggtitle("VSMC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "VSMC")
+p7 <- plotUMAP(data,colour_by= "BMEC",point_size=1) + theme_void() + ggtitle("BMEC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "BMEC")
+
+p1
+grid.arrange(p2,p3,p4,p5,p6,p7, nrow=2)
+
+```
+
+## NGS3111 Astrocytes only
+
+```{r NGS3111 Astrocyte only data, fig.show='hold', message=FALSE, warning=FALSE, out.width="100%"}
+astros <- readRDS(paste0(main.dir,"NGS3111/NGS3111_Astrocytes_merged_labeled.rds"))
+
+astros.seurat <- as.Seurat(astros)
+astros.seurat <- DietSeurat(astros.seurat)
+astros.seurat <- runSeurat(astros.seurat)
+
+astros.seurat <- scoreCells(astros.seurat,seurat = TRUE,geneSetList = ga.ctm)
+
+p1 <- DimPlot(astros.seurat, group.by = "seurat_clusters", label = TRUE,
+              repel = TRUE, pt.size = 1 ) + theme_void() +
+  labs(title = "Seurat Clusters Astrocytes",
+       caption = paste0("Total Astrocytes = ",dim(astros.seurat)[2])) +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold"),
+        plot.caption = element_text(size=14,face = "italic")) 
+p2 <- FeaturePlot(astros.seurat,features= "astrocyte",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Astrocyte Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Astrocyte")
+p3 <- FeaturePlot(astros.seurat,features= "microglia",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Microglia Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Microglia")
+p4 <- FeaturePlot(astros.seurat,features= "oligodendrocyte", reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Oligodendrocyte Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Oligodendrocyte")
+p5 <- FeaturePlot(astros.seurat,features= "OPC", reduction="umap", pt.size = 1) + theme_void() +
+  ggtitle("OPC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "OPC")
+p6 <- FeaturePlot(astros.seurat,features= "VSMC", reduction="umap", pt.size = 1) + theme_void() +
+  ggtitle("VSMC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "VSMC")
+p7 <- FeaturePlot(astros.seurat,features= "BMEC", reduction="umap", pt.size = 1) + theme_void() +
+  ggtitle("BMEC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "BMEC")
+p1
+grid.arrange(p2,p3,p4,p5,p6,p7, nrow=2)
+
+# lets get rid of high scoring cells for micro
+astros.seurat <- subset(astros.seurat,subset= microglia < 0.5)
+
+# add metadata fields of interest
+astros.seurat$BrainRegion <- "Corpus Callosum"
+astros.seurat$StudyName <- "Shen Lysolecithin"
+astros.seurat$Model <- factor(astros.seurat$Condition) # levels (14dpl,28dpl,5dpl,Control)
+levels(astros.seurat$Model) <- c("Lysolecithin","Lysolecithin","Lysolecithin","Control")
+astros.seurat$Disease <- factor(astros.seurat$Condition)
+levels(astros.seurat$Disease) <- c("MS","MS","MS","MS_control")
+saveRDS(astros.seurat,paste0(main.dir,"NGS3111/NGS3111_Astrocytes_Seurat.rds"))
+```
+
+# NGS3971 - Lee TauP2APP
+```{r Lee TauPS2APP, echo=FALSE, fig.show='hold', message=FALSE, warning=FALSE, out.width="100%"}
+# load data 
+data <- readRDS(paste0(main.dir,"NGS3971/NGS3971_merged_labeled.rds"))
+data <- scoreCells(data,geneSetList = ga.ctm)
+
+p1 <- plotUMAP(data,colour_by= "FineLabels",text_by="FineLabels",point_size=1) + theme_void() + ggtitle("SingleR Labels") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold"),legend.position = "none")
+p2 <- plotUMAP(data,colour_by= "astrocyte",point_size=1) + theme_void() + ggtitle("Astrocyte Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd")) + labs(colour = "Astrocyte")
+p3 <- plotUMAP(data,colour_by= "microglia",point_size=1) + theme_void() + ggtitle("Microglia Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+ labs(colour = "Microglia")
+p4 <- plotUMAP(data,colour_by= "oligodendrocyte",point_size=1) + theme_void() + ggtitle("Oligodendrocyte Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Oligodendrocyte")
+p5 <- plotUMAP(data,colour_by= "OPC",point_size=1) + theme_void() + ggtitle("OPC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "OPC")
+p6 <- plotUMAP(data,colour_by= "VSMC",point_size=1) + theme_void() + ggtitle("VSMC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "VSMC")
+p7 <- plotUMAP(data,colour_by= "BMEC",point_size=1) + theme_void() + ggtitle("BMEC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "BMEC")
+
+p1
+grid.arrange(p2,p3,p4,p5,p6,p7, nrow=2)
+
+```
+
+## NGS3971 Astrocytes only
+
+```{r NGS3971 Astrocyte only data, fig.show='hold', message=FALSE, warning=FALSE, out.width="100%"}
+astros <- readRDS(paste0(main.dir,"NGS3971/NGS3971_Astrocytes_merged_labeled.rds"))
+
+astros.seurat <- as.Seurat(astros)
+astros.seurat <- DietSeurat(astros.seurat)
+astros.seurat <- runSeurat(astros.seurat)
+
+astros.seurat <- scoreCells(astros.seurat,seurat = TRUE,geneSetList = ga.ctm)
+
+p1 <- DimPlot(astros.seurat, group.by = "seurat_clusters", label = TRUE,
+              repel = TRUE, pt.size = 1 ) + theme_void() +
+  labs(title = "Seurat Clusters Astrocytes",
+       caption = paste0("Total Astrocytes = ",dim(astros.seurat)[2])) +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold"),
+        plot.caption = element_text(size=14,face = "italic")) 
+p2 <- FeaturePlot(astros.seurat,features= "astrocyte",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Astrocyte Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Astrocyte")
+p3 <- FeaturePlot(astros.seurat,features= "microglia",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Microglia Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Microglia")
+p4 <- FeaturePlot(astros.seurat,features= "oligodendrocyte", reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Oligodendrocyte Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Oligodendrocyte")
+p5 <- FeaturePlot(astros.seurat,features= "OPC", reduction="umap", pt.size = 1) + theme_void() +
+  ggtitle("OPC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "OPC")
+p6 <- FeaturePlot(astros.seurat,features= "VSMC", reduction="umap", pt.size = 1) + theme_void() +
+  ggtitle("VSMC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "VSMC")
+p7 <- FeaturePlot(astros.seurat,features= "BMEC", reduction="umap", pt.size = 1) + theme_void() +
+  ggtitle("BMEC Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "BMEC")
+p1
+grid.arrange(p2,p3,p4,p5,p6,p7, nrow=2)
+
+# lets get rid of high scoring cells for micro
+astros.seurat <- subset(astros.seurat,subset= microglia < 0.5)
+
+# add metadata fields of interest
+astros.seurat$BrainRegion <- "Hippocampus"
+astros.seurat$StudyName <- "Lee TauPS2APP"
+astros.seurat$Model <- factor(astros.seurat$Condition) # levels ( Control, PS2APP, TauPS2APP)
+levels(astros.seurat$Model) <- c("Control","PS2APP","TauPS2APP")
+astros.seurat$Disease <- factor(astros.seurat$Condition)
+levels(astros.seurat$Disease) <- c("AD_control","AD","AD")
+saveRDS(astros.seurat,paste0(main.dir,"NGS3971/NGS3971_Astrocytes_Seurat.rds"))
+```

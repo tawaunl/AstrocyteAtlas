@@ -1,0 +1,2080 @@
+---
+title: "GSE143758_Processing"
+author: "Tawaun Lucas"
+date: "12/14/2022"
+output: 
+  html_document:
+    toc: true # table of content true
+    toc_depth: 3  # upto three depths of headings (specified by #, ## and ###)
+    toc_float: true
+    number_sections: true  ## if you want number sections at each table header
+    theme: united  # many options for theme, this one is my favorite.
+    highlight: tango  # specifies the syntax highlighting style
+---
+
+#GSE143758 - Habib 5XFAD
+```{r setup, include=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(out.width="100%")
+
+library(Seurat)
+library(SingleCellExperiment)
+library(metaGP)
+library(gpExtra)
+library(dplyr)
+library(gridExtra)
+library(grid)
+library(RColorBrewer)
+library(ggplot2)
+library(scDblFinder)
+
+gac <- installedGeneAnnotationCollection("Neuroinflammation")
+mouseHipp <- gac$`Mouse Hippocampus scRNASeq Markers`
+ga.ctm <- geneSetList(mouseHipp) # "cell type markers"
+ga.ctm <- lapply(ga.ctm, unlist) %>% lapply(unname)
+
+```
+
+## Set up funtions for analysis
+<details>
+<summary>Click for to see code</summary>
+```{r Functions}
+scoreCells <- function(data,seurat=FALSE,geneSetList=ga.ctm){
+for (gene_set in names(geneSetList)) {
+score_gene_set <- geneSetList[[gene_set]]
+if(seurat==FALSE){
+score_gene_set <- intersect(score_gene_set,rownames(data))
+scores_by_cell <- colMeans(assay(data, 'logcounts')[score_gene_set,],na.rm = TRUE)
+}
+if(seurat==TRUE){
+data1 <- as.SingleCellExperiment(data)
+rownames(data1) <- features$ID
+score_gene_set <- intersect(score_gene_set,rownames(data1))
+scores_by_cell <- colMeans(assay(data1, 'logcounts')[score_gene_set,],na.rm = TRUE)
+}
+data[[gene_set]] <- scores_by_cell
+}
+return(data)
+}
+
+runSeurat <- function(obj){
+obj <- NormalizeData(obj,verbose=FALSE)
+obj <- FindVariableFeatures(obj)
+obj <- ScaleData(object = obj, verbose=FALSE)
+obj <- RunPCA(obj, npcs = 30,verbose=FALSE)
+obj <- FindNeighbors(obj, reduction = "pca",dims=1:20,verbose=FALSE)
+obj <- FindClusters(obj, resolution = 0.5,verbose=FALSE)
+obj <- RunUMAP(obj,reduction= "pca",dims=1:20,verbose=FALSE)
+print("Seurat Pipeline Finished!")
+return(obj)
+}
+```
+</details>
+
+# AD_M15_47m - 5XFAD
+```{r}
+# load data from the original and filtered h5 file
+AD_M15_47m.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/AD_M15_47m.h5", use.names = TRUE)
+AD_M15_47m.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/AD_M15_47m_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+AD_M15_47m.raw <- CreateSeuratObject(counts = AD_M15_47m.raw)
+AD_M15_47m.filtered <- CreateSeuratObject(counts = AD_M15_47m.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(AD_M15_47m.filtered)
+AD_M15_47m.raw <- AD_M15_47m.raw[,colnames(AD_M15_47m.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(AD_M15_47m.raw),feat$symbol)
+features <- feat[x,]
+
+AD_M15_47m.raw$MitoPercent <- PercentageFeatureSet(AD_M15_47m.raw, pattern = "^mt-")
+AD_M15_47m.raw$Condition <- "5XFAD"
+AD_M15_47m.raw$Genotype <- "5XFAD"
+AD_M15_47m.raw$StudyID <- "GSE143758"
+AD_M15_47m.raw$Sample <- "AD_M15_47m"
+AD_M15_47m.raw$Gender <- "Male"
+AD_M15_47m.raw$BrainRegion <- "Hippocampus"
+AD_M15_47m.raw$StudyName <- "Habib 5XFAD"
+AD_M15_47m.raw$data.type <- "Single Nuclei"
+AD_M15_47m.raw$Age <- "5m"
+AD_M15_47m.raw$Disease <- "AD"
+AD_M15_47m.raw$Model <- "5XFAD"
+
+AD_M15_47m.filtered$MitoPercent <- PercentageFeatureSet(AD_M15_47m.filtered, pattern = "^mt-")
+AD_M15_47m.filtered$Condition <- "5XFAD"
+AD_M15_47m.filtered$Genotype <- "5XFAD"
+AD_M15_47m.filtered$StudyID <- "GSE143758"
+AD_M15_47m.filtered$Sample <- "AD_M15_47m"
+AD_M15_47m.filtered$Gender <- "Male"
+AD_M15_47m.filtered$BrainRegion <- "Hippocampus"
+AD_M15_47m.filtered$StudyName <- "Habib 5XFAD"
+AD_M15_47m.filtered$data.type <- "Single Nuclei"
+AD_M15_47m.filtered$Age <- "5m"
+AD_M15_47m.filtered$Disease <- "AD"
+AD_M15_47m.filtered$Model <- "5XFAD"
+```
+# AD_M704_73m -5XFAD
+```{r}
+# load data from the original and filtered h5 file
+AD_M704_73m.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/AD_M704_73m.h5", use.names = TRUE)
+AD_M704_73m.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/AD_M704_73m_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+AD_M704_73m.raw <- CreateSeuratObject(counts = AD_M704_73m.raw)
+AD_M704_73m.filtered <- CreateSeuratObject(counts = AD_M704_73m.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(AD_M704_73m.filtered)
+AD_M704_73m.raw <- AD_M704_73m.raw[,colnames(AD_M704_73m.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(AD_M704_73m.raw),feat$symbol)
+features <- feat[x,]
+
+AD_M704_73m.raw$MitoPercent <- PercentageFeatureSet(AD_M704_73m.raw, pattern = "^mt-")
+AD_M704_73m.raw$Condition <- "5XFAD"
+AD_M704_73m.raw$Genotype <- "5XFAD"
+AD_M704_73m.raw$StudyID <- "GSE143758"
+AD_M704_73m.raw$Sample <- "AD_M704_73m"
+AD_M704_73m.raw$Gender <- "Male"
+AD_M704_73m.raw$BrainRegion <- "Hippocampus"
+AD_M704_73m.raw$StudyName <- "Habib 5XFAD"
+AD_M704_73m.raw$data.type <- "Single Nuclei"
+AD_M704_73m.raw$Age <- "7m"
+AD_M704_73m.raw$Disease <- "AD"
+AD_M704_73m.raw$Model <- "5XFAD"
+
+AD_M704_73m.filtered$MitoPercent <- PercentageFeatureSet(AD_M704_73m.filtered, pattern = "^mt-")
+AD_M704_73m.filtered$Condition <- "5XFAD"
+AD_M704_73m.filtered$Genotype <- "5XFAD"
+AD_M704_73m.filtered$StudyID <- "GSE143758"
+AD_M704_73m.filtered$Sample <- "AD_M704_73m"
+AD_M704_73m.filtered$Gender <- "Male"
+AD_M704_73m.filtered$BrainRegion <- "Hippocampus"
+AD_M704_73m.filtered$StudyName <- "Habib 5XFAD"
+AD_M704_73m.filtered$data.type <- "Single Nuclei"
+AD_M704_73m.filtered$Age <- "7m"
+AD_M704_73m.filtered$Disease <- "AD"
+AD_M704_73m.filtered$Model <- "5XFAD"
+```
+
+# CRTX_7mAD343 - 5XFAD
+```{r}
+# load data from the original and filtered h5 file
+CRTX_7mAD343.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/CRTX_7mAD343.h5", use.names = TRUE)
+CRTX_7mAD343.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/CRTX_7mAD343_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+CRTX_7mAD343.raw <- CreateSeuratObject(counts = CRTX_7mAD343.raw)
+CRTX_7mAD343.filtered <- CreateSeuratObject(counts = CRTX_7mAD343.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(CRTX_7mAD343.filtered)
+CRTX_7mAD343.raw <- CRTX_7mAD343.raw[,colnames(CRTX_7mAD343.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(CRTX_7mAD343.raw),feat$symbol)
+features <- feat[x,]
+
+CRTX_7mAD343.raw$MitoPercent <- PercentageFeatureSet(CRTX_7mAD343.raw, pattern = "^mt-")
+CRTX_7mAD343.raw$Condition <- "5XFAD"
+CRTX_7mAD343.raw$Genotype <- "5XFAD"
+CRTX_7mAD343.raw$StudyID <- "GSE143758"
+CRTX_7mAD343.raw$Sample <- "CRTX_7mAD343"
+CRTX_7mAD343.raw$Gender <- "Male"
+CRTX_7mAD343.raw$BrainRegion <- "Cortex"
+CRTX_7mAD343.raw$StudyName <- "Habib 5XFAD"
+CRTX_7mAD343.raw$data.type <- "Single Nuclei"
+CRTX_7mAD343.raw$Age <- "7m"
+CRTX_7mAD343.raw$Disease <- "AD"
+CRTX_7mAD343.raw$Model <- "5XFAD"
+
+CRTX_7mAD343.filtered$MitoPercent <- PercentageFeatureSet(CRTX_7mAD343.filtered, pattern = "^mt-")
+CRTX_7mAD343.filtered$Condition <- "5XFAD"
+CRTX_7mAD343.filtered$Genotype <- "5XFAD"
+CRTX_7mAD343.filtered$StudyID <- "GSE143758"
+CRTX_7mAD343.filtered$Sample <- "CRTX_7mAD343"
+CRTX_7mAD343.filtered$Gender <- "Male"
+CRTX_7mAD343.filtered$BrainRegion <- "Cortex"
+CRTX_7mAD343.filtered$StudyName <- "Habib 5XFAD"
+CRTX_7mAD343.filtered$data.type <- "Single Nuclei"
+CRTX_7mAD343.filtered$Age <- "7m"
+CRTX_7mAD343.filtered$Disease <- "AD"
+CRTX_7mAD343.filtered$Model <- "5XFAD"
+```
+# CRTX_7mWT341 - WT
+```{r}
+# load data from the original and filtered h5 file
+CRTX_7mWT341.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/CRTX_7mWT341.h5", use.names = TRUE)
+CRTX_7mWT341.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/CRTX_7mWT341_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+CRTX_7mWT341.raw <- CreateSeuratObject(counts = CRTX_7mWT341.raw)
+CRTX_7mWT341.filtered <- CreateSeuratObject(counts = CRTX_7mWT341.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(CRTX_7mWT341.filtered)
+CRTX_7mWT341.raw <- CRTX_7mWT341.raw[,colnames(CRTX_7mWT341.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(CRTX_7mWT341.raw),feat$symbol)
+features <- feat[x,]
+
+CRTX_7mWT341.raw$MitoPercent <- PercentageFeatureSet(CRTX_7mWT341.raw, pattern = "^mt-")
+CRTX_7mWT341.raw$Condition <- "Wildtype"
+CRTX_7mWT341.raw$Genotype <- "Wildtype"
+CRTX_7mWT341.raw$StudyID <- "GSE143758"
+CRTX_7mWT341.raw$Sample <- "CRTX_7mWT341"
+CRTX_7mWT341.raw$Gender <- "Male"
+CRTX_7mWT341.raw$BrainRegion <- "Cortex"
+CRTX_7mWT341.raw$StudyName <- "Habib 5XFAD"
+CRTX_7mWT341.raw$data.type <- "Single Nuclei"
+CRTX_7mWT341.raw$Age <- "7m"
+CRTX_7mWT341.raw$Disease <- "AD_control"
+CRTX_7mWT341.raw$Model <- "Control"
+
+CRTX_7mWT341.filtered$MitoPercent <- PercentageFeatureSet(CRTX_7mWT341.filtered, pattern = "^mt-")
+CRTX_7mWT341.filtered$Condition <- "Wildtype"
+CRTX_7mWT341.filtered$Genotype <- "Wildtype"
+CRTX_7mWT341.filtered$StudyID <- "GSE143758"
+CRTX_7mWT341.filtered$Sample <- "CRTX_7mWT341"
+CRTX_7mWT341.filtered$Gender <- "Male"
+CRTX_7mWT341.filtered$BrainRegion <- "Cortex"
+CRTX_7mWT341.filtered$StudyName <- "Habib 5XFAD"
+CRTX_7mWT341.filtered$data.type <- "Single Nuclei"
+CRTX_7mWT341.filtered$Age <- "7m"
+CRTX_7mWT341.filtered$Disease <- "AD_control"
+CRTX_7mWT341.filtered$Model <- "Control"
+```
+# CRTX_10mAD135 - 5XFAD
+```{r}
+# load data from the original and filtered h5 file
+CRTX_10mAD135.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/CRTX_10mAD135.h5", use.names = TRUE)
+CRTX_10mAD135.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/CRTX_10mAD135_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+CRTX_10mAD135.raw <- CreateSeuratObject(counts = CRTX_10mAD135.raw)
+CRTX_10mAD135.filtered <- CreateSeuratObject(counts = CRTX_10mAD135.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(CRTX_10mAD135.filtered)
+CRTX_10mAD135.raw <- CRTX_10mAD135.raw[,colnames(CRTX_10mAD135.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(CRTX_10mAD135.raw),feat$symbol)
+features <- feat[x,]
+
+CRTX_10mAD135.raw$MitoPercent <- PercentageFeatureSet(CRTX_10mAD135.raw, pattern = "^mt-")
+CRTX_10mAD135.raw$Condition <- "5XFAD"
+CRTX_10mAD135.raw$Genotype <- "5XFAD"
+CRTX_10mAD135.raw$StudyID <- "GSE143758"
+CRTX_10mAD135.raw$Sample <- "CRTX_10mAD135"
+CRTX_10mAD135.raw$Gender <- "Male"
+CRTX_10mAD135.raw$BrainRegion <- "Cortex"
+CRTX_10mAD135.raw$StudyName <- "Habib 5XFAD"
+CRTX_10mAD135.raw$data.type <- "Single Nuclei"
+CRTX_10mAD135.raw$Age <- "10m"
+CRTX_10mAD135.raw$Disease <- "AD"
+CRTX_10mAD135.raw$Model <- "5XFAD"
+
+CRTX_10mAD135.filtered$MitoPercent <- PercentageFeatureSet(CRTX_10mAD135.filtered, pattern = "^mt-")
+CRTX_10mAD135.filtered$Condition <- "5XFAD"
+CRTX_10mAD135.filtered$Genotype <- "5XFAD"
+CRTX_10mAD135.filtered$StudyID <- "GSE143758"
+CRTX_10mAD135.filtered$Sample <- "CRTX_10mAD135"
+CRTX_10mAD135.filtered$Gender <- "Male"
+CRTX_10mAD135.filtered$BrainRegion <- "Cortex"
+CRTX_10mAD135.filtered$StudyName <- "Habib 5XFAD"
+CRTX_10mAD135.filtered$data.type <- "Single Nuclei"
+CRTX_10mAD135.filtered$Age <- "10m"
+CRTX_10mAD135.filtered$Disease <- "AD"
+CRTX_10mAD135.filtered$Model <- "5XFAD"
+```
+# CRTX_10mWT124 - WT
+```{r}
+# load data from the original and filtered h5 file
+CRTX_10mWT124.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/CRTX_10mWT124.h5", use.names = TRUE)
+CRTX_10mWT124.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/CRTX_10mWT124_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+CRTX_10mWT124.raw <- CreateSeuratObject(counts = CRTX_10mWT124.raw)
+CRTX_10mWT124.filtered <- CreateSeuratObject(counts = CRTX_10mWT124.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(CRTX_10mWT124.filtered)
+CRTX_10mWT124.raw <- CRTX_10mWT124.raw[,colnames(CRTX_10mWT124.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(CRTX_10mWT124.raw),feat$symbol)
+features <- feat[x,]
+
+CRTX_10mWT124.raw$MitoPercent <- PercentageFeatureSet(CRTX_10mWT124.raw, pattern = "^mt-")
+CRTX_10mWT124.raw$Condition <- "Wildtype"
+CRTX_10mWT124.raw$Genotype <- "Wildtype"
+CRTX_10mWT124.raw$StudyID <- "GSE143758"
+CRTX_10mWT124.raw$Sample <- "CRTX_10mWT124"
+CRTX_10mWT124.raw$Gender <- "Male"
+CRTX_10mWT124.raw$BrainRegion <- "Cortex"
+CRTX_10mWT124.raw$StudyName <- "Habib 5XFAD"
+CRTX_10mWT124.raw$data.type <- "Single Nuclei"
+CRTX_10mWT124.raw$Age <- "10m"
+CRTX_10mWT124.raw$Disease <- "AD_control"
+CRTX_10mWT124.raw$Model <- "Control"
+
+CRTX_10mWT124.filtered$MitoPercent <- PercentageFeatureSet(CRTX_10mWT124.filtered, pattern = "^mt-")
+CRTX_10mWT124.filtered$Condition <- "Wildtype"
+CRTX_10mWT124.filtered$Genotype <- "Wildtype"
+CRTX_10mWT124.filtered$StudyID <- "GSE143758"
+CRTX_10mWT124.filtered$Sample <- "CRTX_10mWT124"
+CRTX_10mWT124.filtered$Gender <- "Male"
+CRTX_10mWT124.filtered$BrainRegion <- "Cortex"
+CRTX_10mWT124.filtered$StudyName <- "Habib 5XFAD"
+CRTX_10mWT124.filtered$data.type <- "Single Nuclei"
+CRTX_10mWT124.filtered$Age <- "10m"
+CRTX_10mWT124.filtered$Disease <- "AD_control"
+CRTX_10mWT124.filtered$Model <- "Control"
+```
+# HIP_4mAD186 - 5XFAD
+```{r}
+# load data from the original and filtered h5 file
+HIP_4mAD186.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HIP_4mAD186.h5", use.names = TRUE)
+HIP_4mAD186.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HIP_4mAD186_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+HIP_4mAD186.raw <- CreateSeuratObject(counts = HIP_4mAD186.raw)
+HIP_4mAD186.filtered <- CreateSeuratObject(counts = HIP_4mAD186.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(HIP_4mAD186.filtered)
+HIP_4mAD186.raw <- HIP_4mAD186.raw[,colnames(HIP_4mAD186.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(HIP_4mAD186.raw),feat$symbol)
+features <- feat[x,]
+
+HIP_4mAD186.raw$MitoPercent <- PercentageFeatureSet(HIP_4mAD186.raw, pattern = "^mt-")
+HIP_4mAD186.raw$Condition <- "5XFAD"
+HIP_4mAD186.raw$Genotype <- "5XFAD"
+HIP_4mAD186.raw$StudyID <- "GSE143758"
+HIP_4mAD186.raw$Sample <- "HIP_4mAD186"
+HIP_4mAD186.raw$Gender <- "Male"
+HIP_4mAD186.raw$BrainRegion <- "Hippocampus"
+HIP_4mAD186.raw$StudyName <- "Habib 5XFAD"
+HIP_4mAD186.raw$data.type <- "Single Nuclei"
+HIP_4mAD186.raw$Age <- "4m"
+HIP_4mAD186.raw$Disease <- "AD"
+HIP_4mAD186.raw$Model <- "5XFAD"
+
+HIP_4mAD186.filtered$MitoPercent <- PercentageFeatureSet(HIP_4mAD186.filtered, pattern = "^mt-")
+HIP_4mAD186.filtered$Condition <- "5XFAD"
+HIP_4mAD186.filtered$Genotype <- "5XFAD"
+HIP_4mAD186.filtered$StudyID <- "GSE143758"
+HIP_4mAD186.filtered$Sample <- "HIP_4mAD186"
+HIP_4mAD186.filtered$Gender <- "Male"
+HIP_4mAD186.filtered$BrainRegion <- "Hippocampus"
+HIP_4mAD186.filtered$StudyName <- "Habib 5XFAD"
+HIP_4mAD186.filtered$data.type <- "Single Nuclei"
+HIP_4mAD186.filtered$Age <- "4m"
+HIP_4mAD186.filtered$Disease <- "AD"
+HIP_4mAD186.filtered$Model <- "5XFAD"
+```
+
+# HIP_4mWT185 - WT
+```{r}
+# load data from the original and filtered h5 file
+HIP_4mWT185.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HIP_4mWT185.h5", use.names = TRUE)
+HIP_4mWT185.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HIP_4mWT185_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+HIP_4mWT185.raw <- CreateSeuratObject(counts = HIP_4mWT185.raw)
+HIP_4mWT185.filtered <- CreateSeuratObject(counts = HIP_4mWT185.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(HIP_4mWT185.filtered)
+HIP_4mWT185.raw <- HIP_4mWT185.raw[,colnames(HIP_4mWT185.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(HIP_4mWT185.raw),feat$symbol)
+features <- feat[x,]
+
+HIP_4mWT185.raw$MitoPercent <- PercentageFeatureSet(HIP_4mWT185.raw, pattern = "^mt-")
+HIP_4mWT185.raw$Condition <- "Wildtype"
+HIP_4mWT185.raw$Genotype <- "Wildtype"
+HIP_4mWT185.raw$StudyID <- "GSE143758"
+HIP_4mWT185.raw$Sample <- "HIP_4mWT185"
+HIP_4mWT185.raw$Gender <- "Male"
+HIP_4mWT185.raw$BrainRegion <- "Cortex"
+HIP_4mWT185.raw$StudyName <- "Habib 5XFAD"
+HIP_4mWT185.raw$data.type <- "Single Nuclei"
+HIP_4mWT185.raw$Age <- "4m"
+HIP_4mWT185.raw$Disease <- "AD_control"
+HIP_4mWT185.raw$Model <- "Control"
+
+HIP_4mWT185.filtered$MitoPercent <- PercentageFeatureSet(HIP_4mWT185.filtered, pattern = "^mt-")
+HIP_4mWT185.filtered$Condition <- "Wildtype"
+HIP_4mWT185.filtered$Genotype <- "Wildtype"
+HIP_4mWT185.filtered$StudyID <- "GSE143758"
+HIP_4mWT185.filtered$Sample <- "HIP_4mWT185"
+HIP_4mWT185.filtered$Gender <- "Male"
+HIP_4mWT185.filtered$BrainRegion <- "Cortex"
+HIP_4mWT185.filtered$StudyName <- "Habib 5XFAD"
+HIP_4mWT185.filtered$data.type <- "Single Nuclei"
+HIP_4mWT185.filtered$Age <- "4m"
+HIP_4mWT185.filtered$Disease <- "AD_control"
+HIP_4mWT185.filtered$Model <- "Control"
+```
+
+# HIP_6wAD331 - 5XFAD
+```{r}
+# load data from the original and filtered h5 file
+HIP_6wAD331.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HIP_6wAD331.h5", use.names = TRUE)
+HIP_6wAD331.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HIP_6wAD331_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+HIP_6wAD331.raw <- CreateSeuratObject(counts = HIP_6wAD331.raw)
+HIP_6wAD331.filtered <- CreateSeuratObject(counts = HIP_6wAD331.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(HIP_6wAD331.filtered)
+HIP_6wAD331.raw <- HIP_6wAD331.raw[,colnames(HIP_6wAD331.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(HIP_6wAD331.raw),feat$symbol)
+features <- feat[x,]
+
+HIP_6wAD331.raw$MitoPercent <- PercentageFeatureSet(HIP_6wAD331.raw, pattern = "^mt-")
+HIP_6wAD331.raw$Condition <- "5XFAD"
+HIP_6wAD331.raw$Genotype <- "5XFAD"
+HIP_6wAD331.raw$StudyID <- "GSE143758"
+HIP_6wAD331.raw$Sample <- "HIP_6wAD331"
+HIP_6wAD331.raw$Gender <- "Male"
+HIP_6wAD331.raw$BrainRegion <- "Hippocampus"
+HIP_6wAD331.raw$StudyName <- "Habib 5XFAD"
+HIP_6wAD331.raw$data.type <- "Single Nuclei"
+HIP_6wAD331.raw$Age <- "1.5m"
+HIP_6wAD331.raw$Disease <- "AD"
+HIP_6wAD331.raw$Model <- "5XFAD"
+
+HIP_6wAD331.filtered$MitoPercent <- PercentageFeatureSet(HIP_6wAD331.filtered, pattern = "^mt-")
+HIP_6wAD331.filtered$Condition <- "5XFAD"
+HIP_6wAD331.filtered$Genotype <- "5XFAD"
+HIP_6wAD331.filtered$StudyID <- "GSE143758"
+HIP_6wAD331.filtered$Sample <- "HIP_6wAD331"
+HIP_6wAD331.filtered$Gender <- "Male"
+HIP_6wAD331.filtered$BrainRegion <- "Hippocampus"
+HIP_6wAD331.filtered$StudyName <- "Habib 5XFAD"
+HIP_6wAD331.filtered$data.type <- "Single Nuclei"
+HIP_6wAD331.filtered$Age <- "1.5m"
+HIP_6wAD331.filtered$Disease <- "AD"
+HIP_6wAD331.filtered$Model <- "5XFAD"
+```
+
+
+# HIP_6wWT330 - WT
+```{r}
+# load data from the original and filtered h5 file
+HIP_6wWT330.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HIP_6wWT330.h5", use.names = TRUE)
+HIP_6wWT330.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HIP_6wWT330_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+HIP_6wWT330.raw <- CreateSeuratObject(counts = HIP_6wWT330.raw)
+HIP_6wWT330.filtered <- CreateSeuratObject(counts = HIP_6wWT330.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(HIP_6wWT330.filtered)
+HIP_6wWT330.raw <- HIP_6wWT330.raw[,colnames(HIP_6wWT330.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(HIP_6wWT330.raw),feat$symbol)
+features <- feat[x,]
+
+HIP_6wWT330.raw$MitoPercent <- PercentageFeatureSet(HIP_6wWT330.raw, pattern = "^mt-")
+HIP_6wWT330.raw$Condition <- "Wildtype"
+HIP_6wWT330.raw$Genotype <- "Wildtype"
+HIP_6wWT330.raw$StudyID <- "GSE143758"
+HIP_6wWT330.raw$Sample <- "HIP_6wWT330"
+HIP_6wWT330.raw$Gender <- "Male"
+HIP_6wWT330.raw$BrainRegion <- "Cortex"
+HIP_6wWT330.raw$StudyName <- "Habib 5XFAD"
+HIP_6wWT330.raw$data.type <- "Single Nuclei"
+HIP_6wWT330.raw$Age <- "1.5m"
+HIP_6wWT330.raw$Disease <- "AD_control"
+HIP_6wWT330.raw$Model <- "Control"
+
+HIP_6wWT330.filtered$MitoPercent <- PercentageFeatureSet(HIP_6wWT330.filtered, pattern = "^mt-")
+HIP_6wWT330.filtered$Condition <- "Wildtype"
+HIP_6wWT330.filtered$Genotype <- "Wildtype"
+HIP_6wWT330.filtered$StudyID <- "GSE143758"
+HIP_6wWT330.filtered$Sample <- "HIP_6wWT330"
+HIP_6wWT330.filtered$Gender <- "Male"
+HIP_6wWT330.filtered$BrainRegion <- "Cortex"
+HIP_6wWT330.filtered$StudyName <- "Habib 5XFAD"
+HIP_6wWT330.filtered$data.type <- "Single Nuclei"
+HIP_6wWT330.filtered$Age <- "1.5m"
+HIP_6wWT330.filtered$Disease <- "AD_control"
+HIP_6wWT330.filtered$Model <- "Control"
+```
+
+# HIP_7mAD343 - 5XFAD
+```{r}
+# load data from the original and filtered h5 file
+HIP_7mAD343.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HIP_7mAD343.h5", use.names = TRUE)
+HIP_7mAD343.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HIP_7mAD343_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+HIP_7mAD343.raw <- CreateSeuratObject(counts = HIP_7mAD343.raw)
+HIP_7mAD343.filtered <- CreateSeuratObject(counts = HIP_7mAD343.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(HIP_7mAD343.filtered)
+HIP_7mAD343.raw <- HIP_7mAD343.raw[,colnames(HIP_7mAD343.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(HIP_7mAD343.raw),feat$symbol)
+features <- feat[x,]
+
+HIP_7mAD343.raw$MitoPercent <- PercentageFeatureSet(HIP_7mAD343.raw, pattern = "^mt-")
+HIP_7mAD343.raw$Condition <- "5XFAD"
+HIP_7mAD343.raw$Genotype <- "5XFAD"
+HIP_7mAD343.raw$StudyID <- "GSE143758"
+HIP_7mAD343.raw$Sample <- "HIP_7mAD343"
+HIP_7mAD343.raw$Gender <- "Male"
+HIP_7mAD343.raw$BrainRegion <- "Hippocampus"
+HIP_7mAD343.raw$StudyName <- "Habib 5XFAD"
+HIP_7mAD343.raw$data.type <- "Single Nuclei"
+HIP_7mAD343.raw$Age <- "7m"
+HIP_7mAD343.raw$Disease <- "AD"
+HIP_7mAD343.raw$Model <- "5XFAD"
+
+HIP_7mAD343.filtered$MitoPercent <- PercentageFeatureSet(HIP_7mAD343.filtered, pattern = "^mt-")
+HIP_7mAD343.filtered$Condition <- "5XFAD"
+HIP_7mAD343.filtered$Genotype <- "5XFAD"
+HIP_7mAD343.filtered$StudyID <- "GSE143758"
+HIP_7mAD343.filtered$Sample <- "HIP_7mAD343"
+HIP_7mAD343.filtered$Gender <- "Male"
+HIP_7mAD343.filtered$BrainRegion <- "Hippocampus"
+HIP_7mAD343.filtered$StudyName <- "Habib 5XFAD"
+HIP_7mAD343.filtered$data.type <- "Single Nuclei"
+HIP_7mAD343.filtered$Age <- "7m"
+HIP_7mAD343.filtered$Disease <- "AD"
+HIP_7mAD343.filtered$Model <- "5XFAD"
+```
+
+
+
+# HIP_7mWT341 - WT
+```{r}
+# load data from the original and filtered h5 file
+HIP_7mWT341.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HIP_7mWT341.h5", use.names = TRUE)
+HIP_7mWT341.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HIP_7mWT341_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+HIP_7mWT341.raw <- CreateSeuratObject(counts = HIP_7mWT341.raw)
+HIP_7mWT341.filtered <- CreateSeuratObject(counts = HIP_7mWT341.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(HIP_7mWT341.filtered)
+HIP_7mWT341.raw <- HIP_7mWT341.raw[,colnames(HIP_7mWT341.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(HIP_7mWT341.raw),feat$symbol)
+features <- feat[x,]
+
+HIP_7mWT341.raw$MitoPercent <- PercentageFeatureSet(HIP_7mWT341.raw, pattern = "^mt-")
+HIP_7mWT341.raw$Condition <- "Wildtype"
+HIP_7mWT341.raw$Genotype <- "Wildtype"
+HIP_7mWT341.raw$StudyID <- "GSE143758"
+HIP_7mWT341.raw$Sample <- "HIP_7mWT341"
+HIP_7mWT341.raw$Gender <- "Male"
+HIP_7mWT341.raw$BrainRegion <- "Cortex"
+HIP_7mWT341.raw$StudyName <- "Habib 5XFAD"
+HIP_7mWT341.raw$data.type <- "Single Nuclei"
+HIP_7mWT341.raw$Age <- "7m"
+HIP_7mWT341.raw$Disease <- "AD_control"
+HIP_7mWT341.raw$Model <- "Control"
+
+HIP_7mWT341.filtered$MitoPercent <- PercentageFeatureSet(HIP_7mWT341.filtered, pattern = "^mt-")
+HIP_7mWT341.filtered$Condition <- "Wildtype"
+HIP_7mWT341.filtered$Genotype <- "Wildtype"
+HIP_7mWT341.filtered$StudyID <- "GSE143758"
+HIP_7mWT341.filtered$Sample <- "HIP_7mWT341"
+HIP_7mWT341.filtered$Gender <- "Male"
+HIP_7mWT341.filtered$BrainRegion <- "Cortex"
+HIP_7mWT341.filtered$StudyName <- "Habib 5XFAD"
+HIP_7mWT341.filtered$data.type <- "Single Nuclei"
+HIP_7mWT341.filtered$Age <- "7m"
+HIP_7mWT341.filtered$Disease <- "AD_control"
+HIP_7mWT341.filtered$Model <- "Control"
+```
+
+
+# HIP_10mAD135 - 5XFAD
+```{r}
+# load data from the original and filtered h5 file
+HIP_10mAD135.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HIP_10mAD135.h5", use.names = TRUE)
+HIP_10mAD135.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HIP_10mAD135_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+HIP_10mAD135.raw <- CreateSeuratObject(counts = HIP_10mAD135.raw)
+HIP_10mAD135.filtered <- CreateSeuratObject(counts = HIP_10mAD135.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(HIP_10mAD135.filtered)
+HIP_10mAD135.raw <- HIP_10mAD135.raw[,colnames(HIP_10mAD135.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(HIP_10mAD135.raw),feat$symbol)
+features <- feat[x,]
+
+HIP_10mAD135.raw$MitoPercent <- PercentageFeatureSet(HIP_10mAD135.raw, pattern = "^mt-")
+HIP_10mAD135.raw$Condition <- "5XFAD"
+HIP_10mAD135.raw$Genotype <- "5XFAD"
+HIP_10mAD135.raw$StudyID <- "GSE143758"
+HIP_10mAD135.raw$Sample <- "HIP_10mAD135"
+HIP_10mAD135.raw$Gender <- "Male"
+HIP_10mAD135.raw$BrainRegion <- "Hippocampus"
+HIP_10mAD135.raw$StudyName <- "Habib 5XFAD"
+HIP_10mAD135.raw$data.type <- "Single Nuclei"
+HIP_10mAD135.raw$Age <- "10m"
+HIP_10mAD135.raw$Disease <- "AD"
+HIP_10mAD135.raw$Model <- "5XFAD"
+
+HIP_10mAD135.filtered$MitoPercent <- PercentageFeatureSet(HIP_10mAD135.filtered, pattern = "^mt-")
+HIP_10mAD135.filtered$Condition <- "5XFAD"
+HIP_10mAD135.filtered$Genotype <- "5XFAD"
+HIP_10mAD135.filtered$StudyID <- "GSE143758"
+HIP_10mAD135.filtered$Sample <- "HIP_10mAD135"
+HIP_10mAD135.filtered$Gender <- "Male"
+HIP_10mAD135.filtered$BrainRegion <- "Hippocampus"
+HIP_10mAD135.filtered$StudyName <- "Habib 5XFAD"
+HIP_10mAD135.filtered$data.type <- "Single Nuclei"
+HIP_10mAD135.filtered$Age <- "10m"
+HIP_10mAD135.filtered$Disease <- "AD"
+HIP_10mAD135.filtered$Model <- "5XFAD"
+```
+
+
+
+
+# HIP_10mWT124 - WT
+```{r}
+# load data from the original and filtered h5 file
+HIP_10mWT124.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HIP_10mWT124.h5", use.names = TRUE)
+HIP_10mWT124.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HIP_10mWT124_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+HIP_10mWT124.raw <- CreateSeuratObject(counts = HIP_10mWT124.raw)
+HIP_10mWT124.filtered <- CreateSeuratObject(counts = HIP_10mWT124.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(HIP_10mWT124.filtered)
+HIP_10mWT124.raw <- HIP_10mWT124.raw[,colnames(HIP_10mWT124.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(HIP_10mWT124.raw),feat$symbol)
+features <- feat[x,]
+
+HIP_10mWT124.raw$MitoPercent <- PercentageFeatureSet(HIP_10mWT124.raw, pattern = "^mt-")
+HIP_10mWT124.raw$Condition <- "Wildtype"
+HIP_10mWT124.raw$Genotype <- "Wildtype"
+HIP_10mWT124.raw$StudyID <- "GSE143758"
+HIP_10mWT124.raw$Sample <- "HIP_10mWT124"
+HIP_10mWT124.raw$Gender <- "Male"
+HIP_10mWT124.raw$BrainRegion <- "Cortex"
+HIP_10mWT124.raw$StudyName <- "Habib 5XFAD"
+HIP_10mWT124.raw$data.type <- "Single Nuclei"
+HIP_10mWT124.raw$Age <- "10m"
+HIP_10mWT124.raw$Disease <- "AD_control"
+HIP_10mWT124.raw$Model <- "Control"
+
+HIP_10mWT124.filtered$MitoPercent <- PercentageFeatureSet(HIP_10mWT124.filtered, pattern = "^mt-")
+HIP_10mWT124.filtered$Condition <- "Wildtype"
+HIP_10mWT124.filtered$Genotype <- "Wildtype"
+HIP_10mWT124.filtered$StudyID <- "GSE143758"
+HIP_10mWT124.filtered$Sample <- "HIP_10mWT124"
+HIP_10mWT124.filtered$Gender <- "Male"
+HIP_10mWT124.filtered$BrainRegion <- "Cortex"
+HIP_10mWT124.filtered$StudyName <- "Habib 5XFAD"
+HIP_10mWT124.filtered$data.type <- "Single Nuclei"
+HIP_10mWT124.filtered$Age <- "10m"
+HIP_10mWT124.filtered$Disease <- "AD_control"
+HIP_10mWT124.filtered$Model <- "Control"
+```
+
+
+
+# HIP_AD-untreat_52 - 5XFAD
+```{r}
+# load data from the original and filtered h5 file
+HIP_ADuntreat_52.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HIP_AD-untreat_52.h5", use.names = TRUE)
+HIP_ADuntreat_52.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HIP_AD-untreat_52_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+HIP_ADuntreat_52.raw <- CreateSeuratObject(counts = HIP_ADuntreat_52.raw)
+HIP_ADuntreat_52.filtered <- CreateSeuratObject(counts = HIP_ADuntreat_52.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(HIP_ADuntreat_52.filtered)
+HIP_ADuntreat_52.raw <- HIP_ADuntreat_52.raw[,colnames(HIP_ADuntreat_52.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(HIP_ADuntreat_52.raw),feat$symbol)
+features <- feat[x,]
+
+HIP_ADuntreat_52.raw$MitoPercent <- PercentageFeatureSet(HIP_ADuntreat_52.raw, pattern = "^mt-")
+HIP_ADuntreat_52.raw$Condition <- "5XFAD"
+HIP_ADuntreat_52.raw$Genotype <- "5XFAD"
+HIP_ADuntreat_52.raw$StudyID <- "GSE143758"
+HIP_ADuntreat_52.raw$Sample <- "HIP_ADuntreat_52"
+HIP_ADuntreat_52.raw$Gender <- "Male"
+HIP_ADuntreat_52.raw$BrainRegion <- "Hippocampus"
+HIP_ADuntreat_52.raw$StudyName <- "Habib 5XFAD"
+HIP_ADuntreat_52.raw$data.type <- "Single Nuclei"
+HIP_ADuntreat_52.raw$Age <- "7m"
+HIP_ADuntreat_52.raw$Disease <- "AD"
+HIP_ADuntreat_52.raw$Model <- "5XFAD"
+
+HIP_ADuntreat_52.filtered$MitoPercent <- PercentageFeatureSet(HIP_ADuntreat_52.filtered, pattern = "^mt-")
+HIP_ADuntreat_52.filtered$Condition <- "5XFAD"
+HIP_ADuntreat_52.filtered$Genotype <- "5XFAD"
+HIP_ADuntreat_52.filtered$StudyID <- "GSE143758"
+HIP_ADuntreat_52.filtered$Sample <- "HIP_ADuntreat_52"
+HIP_ADuntreat_52.filtered$Gender <- "Male"
+HIP_ADuntreat_52.filtered$BrainRegion <- "Hippocampus"
+HIP_ADuntreat_52.filtered$StudyName <- "Habib 5XFAD"
+HIP_ADuntreat_52.filtered$data.type <- "Single Nuclei"
+HIP_ADuntreat_52.filtered$Age <- "7m"
+HIP_ADuntreat_52.filtered$Disease <- "AD"
+HIP_ADuntreat_52.filtered$Model <- "5XFAD"
+```
+
+
+
+
+
+# HIP_WT_39 - WT
+```{r}
+# load data from the original and filtered h5 file
+HIP_WT_39.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HIP_WT_39.h5", use.names = TRUE)
+HIP_WT_39.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HIP_WT_39_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+HIP_WT_39.raw <- CreateSeuratObject(counts = HIP_WT_39.raw)
+HIP_WT_39.filtered <- CreateSeuratObject(counts = HIP_WT_39.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(HIP_WT_39.filtered)
+HIP_WT_39.raw <- HIP_WT_39.raw[,colnames(HIP_WT_39.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(HIP_WT_39.raw),feat$symbol)
+features <- feat[x,]
+
+HIP_WT_39.raw$MitoPercent <- PercentageFeatureSet(HIP_WT_39.raw, pattern = "^mt-")
+HIP_WT_39.raw$Condition <- "Wildtype"
+HIP_WT_39.raw$Genotype <- "Wildtype"
+HIP_WT_39.raw$StudyID <- "GSE143758"
+HIP_WT_39.raw$Sample <- "HIP_WT_39"
+HIP_WT_39.raw$Gender <- "Male"
+HIP_WT_39.raw$BrainRegion <- "Cortex"
+HIP_WT_39.raw$StudyName <- "Habib 5XFAD"
+HIP_WT_39.raw$data.type <- "Single Nuclei"
+HIP_WT_39.raw$Age <- "7m"
+HIP_WT_39.raw$Disease <- "AD_control"
+HIP_WT_39.raw$Model <- "Control"
+
+HIP_WT_39.filtered$MitoPercent <- PercentageFeatureSet(HIP_WT_39.filtered, pattern = "^mt-")
+HIP_WT_39.filtered$Condition <- "Wildtype"
+HIP_WT_39.filtered$Genotype <- "Wildtype"
+HIP_WT_39.filtered$StudyID <- "GSE143758"
+HIP_WT_39.filtered$Sample <- "HIP_WT_39"
+HIP_WT_39.filtered$Gender <- "Male"
+HIP_WT_39.filtered$BrainRegion <- "Cortex"
+HIP_WT_39.filtered$StudyName <- "Habib 5XFAD"
+HIP_WT_39.filtered$data.type <- "Single Nuclei"
+HIP_WT_39.filtered$Age <- "7m"
+HIP_WT_39.filtered$Disease <- "AD_control"
+HIP_WT_39.filtered$Model <- "Control"
+```
+
+
+
+
+# HIP_WT_74 - WT
+```{r}
+# load data from the original and filtered h5 file
+HIP_WT_74.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HIP_WT_74.h5", use.names = TRUE)
+HIP_WT_74.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HIP_WT_74_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+HIP_WT_74.raw <- CreateSeuratObject(counts = HIP_WT_74.raw)
+HIP_WT_74.filtered <- CreateSeuratObject(counts = HIP_WT_74.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(HIP_WT_74.filtered)
+HIP_WT_74.raw <- HIP_WT_74.raw[,colnames(HIP_WT_74.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(HIP_WT_74.raw),feat$symbol)
+features <- feat[x,]
+
+HIP_WT_74.raw$MitoPercent <- PercentageFeatureSet(HIP_WT_74.raw, pattern = "^mt-")
+HIP_WT_74.raw$Condition <- "Wildtype"
+HIP_WT_74.raw$Genotype <- "Wildtype"
+HIP_WT_74.raw$StudyID <- "GSE143758"
+HIP_WT_74.raw$Sample <- "HIP_WT_74"
+HIP_WT_74.raw$Gender <- "Male"
+HIP_WT_74.raw$BrainRegion <- "Hippocampus"
+HIP_WT_74.raw$StudyName <- "Habib 5XFAD"
+HIP_WT_74.raw$data.type <- "Single Nuclei"
+HIP_WT_74.raw$Age <- "7m"
+HIP_WT_74.raw$Disease <- "AD_control"
+HIP_WT_74.raw$Model <- "Control"
+
+HIP_WT_74.filtered$MitoPercent <- PercentageFeatureSet(HIP_WT_74.filtered, pattern = "^mt-")
+HIP_WT_74.filtered$Condition <- "Wildtype"
+HIP_WT_74.filtered$Genotype <- "Wildtype"
+HIP_WT_74.filtered$StudyID <- "GSE143758"
+HIP_WT_74.filtered$Sample <- "HIP_WT_74"
+HIP_WT_74.filtered$Gender <- "Male"
+HIP_WT_74.filtered$BrainRegion <- "Hippocampus"
+HIP_WT_74.filtered$StudyName <- "Habib 5XFAD"
+HIP_WT_74.filtered$data.type <- "Single Nuclei"
+HIP_WT_74.filtered$Age <- "7m"
+HIP_WT_74.filtered$Disease <- "AD_control"
+HIP_WT_74.filtered$Model <- "Control"
+```
+
+
+
+
+# HipR-AD-G1-2m - 5XFAD
+```{r}
+# load data from the original and filtered h5 file
+HipRAD2m.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HipR-AD-G1-2m.h5", use.names = TRUE)
+HipRAD2m.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HipR-AD-G1-2m_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+HipRAD2m.raw <- CreateSeuratObject(counts = HipRAD2m.raw)
+HipRAD2m.filtered <- CreateSeuratObject(counts = HipRAD2m.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(HipRAD2m.filtered)
+HipRAD2m.raw <- HipRAD2m.raw[,colnames(HipRAD2m.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(HipRAD2m.raw),feat$symbol)
+features <- feat[x,]
+
+HipRAD2m.raw$MitoPercent <- PercentageFeatureSet(HipRAD2m.raw, pattern = "^mt-")
+HipRAD2m.raw$Condition <- "5XFAD"
+HipRAD2m.raw$Genotype <- "5XFAD"
+HipRAD2m.raw$StudyID <- "GSE143758"
+HipRAD2m.raw$Sample <- "HipRAD2m"
+HipRAD2m.raw$Gender <- "Male"
+HipRAD2m.raw$BrainRegion <- "Hippocampus"
+HipRAD2m.raw$StudyName <- "Habib 5XFAD"
+HipRAD2m.raw$data.type <- "Single Nuclei"
+HipRAD2m.raw$Age <- "1.5m"
+HipRAD2m.raw$Disease <- "AD"
+HipRAD2m.raw$Model <- "5XFAD"
+
+HipRAD2m.filtered$MitoPercent <- PercentageFeatureSet(HipRAD2m.filtered, pattern = "^mt-")
+HipRAD2m.filtered$Condition <- "5XFAD"
+HipRAD2m.filtered$Genotype <- "5XFAD"
+HipRAD2m.filtered$StudyID <- "GSE143758"
+HipRAD2m.filtered$Sample <- "HipRAD2m"
+HipRAD2m.filtered$Gender <- "Male"
+HipRAD2m.filtered$BrainRegion <- "Hippocampus"
+HipRAD2m.filtered$StudyName <- "Habib 5XFAD"
+HipRAD2m.filtered$data.type <- "Single Nuclei"
+HipRAD2m.filtered$Age <- "1.5m"
+HipRAD2m.filtered$Disease <- "AD"
+HipRAD2m.filtered$Model <- "5XFAD"
+```
+
+
+
+
+
+
+# HipR-AD-G1-4w - 5XFAD
+```{r}
+# load data from the original and filtered h5 file
+HipRAD4w.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HipR-AD-G1-4w.h5", use.names = TRUE)
+HipRAD4w.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HipR-AD-G1-4w_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+HipRAD4w.raw <- CreateSeuratObject(counts = HipRAD4w.raw)
+HipRAD4w.filtered <- CreateSeuratObject(counts = HipRAD4w.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(HipRAD4w.filtered)
+HipRAD4w.raw <- HipRAD4w.raw[,colnames(HipRAD4w.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(HipRAD4w.raw),feat$symbol)
+features <- feat[x,]
+
+HipRAD4w.raw$MitoPercent <- PercentageFeatureSet(HipRAD4w.raw, pattern = "^mt-")
+HipRAD4w.raw$Condition <- "5XFAD"
+HipRAD4w.raw$Genotype <- "5XFAD"
+HipRAD4w.raw$StudyID <- "GSE143758"
+HipRAD4w.raw$Sample <- "HipRAD4w"
+HipRAD4w.raw$Gender <- "Male"
+HipRAD4w.raw$BrainRegion <- "Hippocampus"
+HipRAD4w.raw$StudyName <- "Habib 5XFAD"
+HipRAD4w.raw$data.type <- "Single Nuclei"
+HipRAD4w.raw$Age <- "7m"
+HipRAD4w.raw$Disease <- "AD"
+HipRAD4w.raw$Model <- "5XFAD"
+
+HipRAD4w.filtered$MitoPercent <- PercentageFeatureSet(HipRAD4w.filtered, pattern = "^mt-")
+HipRAD4w.filtered$Condition <- "5XFAD"
+HipRAD4w.filtered$Genotype <- "5XFAD"
+HipRAD4w.filtered$StudyID <- "GSE143758"
+HipRAD4w.filtered$Sample <- "HipRAD4w"
+HipRAD4w.filtered$Gender <- "Male"
+HipRAD4w.filtered$BrainRegion <- "Hippocampus"
+HipRAD4w.filtered$StudyName <- "Habib 5XFAD"
+HipRAD4w.filtered$data.type <- "Single Nuclei"
+HipRAD4w.filtered$Age <- "7m"
+HipRAD4w.filtered$Disease <- "AD"
+HipRAD4w.filtered$Model <- "5XFAD"
+```
+
+
+
+
+
+
+# HipR-AD-G1-13m - 5XFAD
+```{r}
+# load data from the original and filtered h5 file
+HipRAD13m.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HipR-AD-G1-13m.h5", use.names = TRUE)
+HipRAD13m.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HipR-AD-G1-13m_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+HipRAD13m.raw <- CreateSeuratObject(counts = HipRAD13m.raw)
+HipRAD13m.filtered <- CreateSeuratObject(counts = HipRAD13m.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(HipRAD13m.filtered)
+HipRAD13m.raw <- HipRAD13m.raw[,colnames(HipRAD13m.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(HipRAD13m.raw),feat$symbol)
+features <- feat[x,]
+
+HipRAD13m.raw$MitoPercent <- PercentageFeatureSet(HipRAD13m.raw, pattern = "^mt-")
+HipRAD13m.raw$Condition <- "5XFAD"
+HipRAD13m.raw$Genotype <- "5XFAD"
+HipRAD13m.raw$StudyID <- "GSE143758"
+HipRAD13m.raw$Sample <- "HipRAD13m"
+HipRAD13m.raw$Gender <- "Male"
+HipRAD13m.raw$BrainRegion <- "Hippocampus"
+HipRAD13m.raw$StudyName <- "Habib 5XFAD"
+HipRAD13m.raw$data.type <- "Single Nuclei"
+HipRAD13m.raw$Age <- "13m"
+HipRAD13m.raw$Disease <- "AD"
+HipRAD13m.raw$Model <- "5XFAD"
+
+HipRAD13m.filtered$MitoPercent <- PercentageFeatureSet(HipRAD13m.filtered, pattern = "^mt-")
+HipRAD13m.filtered$Condition <- "5XFAD"
+HipRAD13m.filtered$Genotype <- "5XFAD"
+HipRAD13m.filtered$StudyID <- "GSE143758"
+HipRAD13m.filtered$Sample <- "HipRAD13m"
+HipRAD13m.filtered$Gender <- "Male"
+HipRAD13m.filtered$BrainRegion <- "Hippocampus"
+HipRAD13m.filtered$StudyName <- "Habib 5XFAD"
+HipRAD13m.filtered$data.type <- "Single Nuclei"
+HipRAD13m.filtered$Age <- "13m"
+HipRAD13m.filtered$Disease <- "AD"
+HipRAD13m.filtered$Model <- "5XFAD"
+```
+# HipR-AD-G2-2m - 5XFAD
+```{r}
+# load data from the original and filtered h5 file
+HipRAD2mG2.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HipR-AD-G2-2m.h5", use.names = TRUE)
+HipRAD2mG2.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HipR-AD-G2-2m_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+HipRAD2mG2.raw <- CreateSeuratObject(counts = HipRAD2mG2.raw)
+HipRAD2mG2.filtered <- CreateSeuratObject(counts = HipRAD2mG2.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(HipRAD2mG2.filtered)
+HipRAD2mG2.raw <- HipRAD2mG2.raw[,colnames(HipRAD2mG2.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(HipRAD2mG2.raw),feat$symbol)
+features <- feat[x,]
+
+HipRAD2mG2.raw$MitoPercent <- PercentageFeatureSet(HipRAD2mG2.raw, pattern = "^mt-")
+HipRAD2mG2.raw$Condition <- "5XFAD"
+HipRAD2mG2.raw$Genotype <- "5XFAD"
+HipRAD2mG2.raw$StudyID <- "GSE143758"
+HipRAD2mG2.raw$Sample <- "HipRAD2mG2"
+HipRAD2mG2.raw$Gender <- "Male"
+HipRAD2mG2.raw$BrainRegion <- "Hippocampus"
+HipRAD2mG2.raw$StudyName <- "Habib 5XFAD"
+HipRAD2mG2.raw$data.type <- "Single Nuclei"
+HipRAD2mG2.raw$Age <- "1.5m"
+HipRAD2mG2.raw$Disease <- "AD"
+HipRAD2mG2.raw$Model <- "5XFAD"
+
+HipRAD2mG2.filtered$MitoPercent <- PercentageFeatureSet(HipRAD2mG2.filtered, pattern = "^mt-")
+HipRAD2mG2.filtered$Condition <- "5XFAD"
+HipRAD2mG2.filtered$Genotype <- "5XFAD"
+HipRAD2mG2.filtered$StudyID <- "GSE143758"
+HipRAD2mG2.filtered$Sample <- "HipRAD2mG2"
+HipRAD2mG2.filtered$Gender <- "Male"
+HipRAD2mG2.filtered$BrainRegion <- "Hippocampus"
+HipRAD2mG2.filtered$StudyName <- "Habib 5XFAD"
+HipRAD2mG2.filtered$data.type <- "Single Nuclei"
+HipRAD2mG2.filtered$Age <- "1.5m"
+HipRAD2mG2.filtered$Disease <- "AD"
+HipRAD2mG2.filtered$Model <- "5XFAD"
+```
+# HipR-AD-G2-14m - 5XFAD
+```{r}
+# load data from the original and filtered h5 file
+HipRAD14m.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HipR-AD-G2-14m.h5", use.names = TRUE)
+HipRAD14m.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HipR-AD-G2-14m_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+HipRAD14m.raw <- CreateSeuratObject(counts = HipRAD14m.raw)
+HipRAD14m.filtered <- CreateSeuratObject(counts = HipRAD14m.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(HipRAD14m.filtered)
+HipRAD14m.raw <- HipRAD14m.raw[,colnames(HipRAD14m.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(HipRAD14m.raw),feat$symbol)
+features <- feat[x,]
+
+HipRAD14m.raw$MitoPercent <- PercentageFeatureSet(HipRAD14m.raw, pattern = "^mt-")
+HipRAD14m.raw$Condition <- "5XFAD"
+HipRAD14m.raw$Genotype <- "5XFAD"
+HipRAD14m.raw$StudyID <- "GSE143758"
+HipRAD14m.raw$Sample <- "HipRAD14m"
+HipRAD14m.raw$Gender <- "Male"
+HipRAD14m.raw$BrainRegion <- "Hippocampus"
+HipRAD14m.raw$StudyName <- "Habib 5XFAD"
+HipRAD14m.raw$data.type <- "Single Nuclei"
+HipRAD14m.raw$Age <- "14m"
+HipRAD14m.raw$Disease <- "AD"
+HipRAD14m.raw$Model <- "5XFAD"
+
+HipRAD14m.filtered$MitoPercent <- PercentageFeatureSet(HipRAD14m.filtered, pattern = "^mt-")
+HipRAD14m.filtered$Condition <- "5XFAD"
+HipRAD14m.filtered$Genotype <- "5XFAD"
+HipRAD14m.filtered$StudyID <- "GSE143758"
+HipRAD14m.filtered$Sample <- "HipRAD14m"
+HipRAD14m.filtered$Gender <- "Male"
+HipRAD14m.filtered$BrainRegion <- "Hippocampus"
+HipRAD14m.filtered$StudyName <- "Habib 5XFAD"
+HipRAD14m.filtered$data.type <- "Single Nuclei"
+HipRAD14m.filtered$Age <- "14m"
+HipRAD14m.filtered$Disease <- "AD"
+HipRAD14m.filtered$Model <- "5XFAD"
+```
+# HipR-AD-G3-2w - 5XFAD
+```{r}
+# load data from the original and filtered h5 file
+HipRAD2w.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HipR-AD-G3-2w.h5", use.names = TRUE)
+HipRAD2w.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HipR-AD-G3-2w_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+HipRAD2w.raw <- CreateSeuratObject(counts = HipRAD2w.raw)
+HipRAD2w.filtered <- CreateSeuratObject(counts = HipRAD2w.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(HipRAD2w.filtered)
+HipRAD2w.raw <- HipRAD2w.raw[,colnames(HipRAD2w.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(HipRAD2w.raw),feat$symbol)
+features <- feat[x,]
+
+HipRAD2w.raw$MitoPercent <- PercentageFeatureSet(HipRAD2w.raw, pattern = "^mt-")
+HipRAD2w.raw$Condition <- "5XFAD"
+HipRAD2w.raw$Genotype <- "5XFAD"
+HipRAD2w.raw$StudyID <- "GSE143758"
+HipRAD2w.raw$Sample <- "HipRAD2w"
+HipRAD2w.raw$Gender <- "Male"
+HipRAD2w.raw$BrainRegion <- "Hippocampus"
+HipRAD2w.raw$StudyName <- "Habib 5XFAD"
+HipRAD2w.raw$data.type <- "Single Nuclei"
+HipRAD2w.raw$Age <- "7m"
+HipRAD2w.raw$Disease <- "AD"
+HipRAD2w.raw$Model <- "5XFAD"
+
+HipRAD2w.filtered$MitoPercent <- PercentageFeatureSet(HipRAD2w.filtered, pattern = "^mt-")
+HipRAD2w.filtered$Condition <- "5XFAD"
+HipRAD2w.filtered$Genotype <- "5XFAD"
+HipRAD2w.filtered$StudyID <- "GSE143758"
+HipRAD2w.filtered$Sample <- "HipRAD2w"
+HipRAD2w.filtered$Gender <- "Male"
+HipRAD2w.filtered$BrainRegion <- "Hippocampus"
+HipRAD2w.filtered$StudyName <- "Habib 5XFAD"
+HipRAD2w.filtered$data.type <- "Single Nuclei"
+HipRAD2w.filtered$Age <- "7m"
+HipRAD2w.filtered$Disease <- "AD"
+HipRAD2w.filtered$Model <- "5XFAD"
+```
+# HipR-WT-G1-2m - WT
+```{r}
+# load data from the original and filtered h5 file
+HipRWT2m.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HipR-WT-G1-2m.h5", use.names = TRUE)
+HipRWT2m.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HipR-WT-G1-2m_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+HipRWT2m.raw <- CreateSeuratObject(counts = HipRWT2m.raw)
+HipRWT2m.filtered <- CreateSeuratObject(counts = HipRWT2m.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(HipRWT2m.filtered)
+HipRWT2m.raw <- HipRWT2m.raw[,colnames(HipRWT2m.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(HipRWT2m.raw),feat$symbol)
+features <- feat[x,]
+
+HipRWT2m.raw$MitoPercent <- PercentageFeatureSet(HipRWT2m.raw, pattern = "^mt-")
+HipRWT2m.raw$Condition <- "Wildtype"
+HipRWT2m.raw$Genotype <- "Wildtype"
+HipRWT2m.raw$StudyID <- "GSE143758"
+HipRWT2m.raw$Sample <- "HipRWT2m"
+HipRWT2m.raw$Gender <- "Male"
+HipRWT2m.raw$BrainRegion <- "Hippocampus"
+HipRWT2m.raw$StudyName <- "Habib 5XFAD"
+HipRWT2m.raw$data.type <- "Single Nuclei"
+HipRWT2m.raw$Age <- "1.5m"
+HipRWT2m.raw$Disease <- "AD_control"
+HipRWT2m.raw$Model <- "Control"
+
+HipRWT2m.filtered$MitoPercent <- PercentageFeatureSet(HipRWT2m.filtered, pattern = "^mt-")
+HipRWT2m.filtered$Condition <- "Wildtype"
+HipRWT2m.filtered$Genotype <- "Wildtype"
+HipRWT2m.filtered$StudyID <- "GSE143758"
+HipRWT2m.filtered$Sample <- "HipRWT2m"
+HipRWT2m.filtered$Gender <- "Male"
+HipRWT2m.filtered$BrainRegion <- "Hippocampus"
+HipRWT2m.filtered$StudyName <- "Habib 5XFAD"
+HipRWT2m.filtered$data.type <- "Single Nuclei"
+HipRWT2m.filtered$Age <- "1.5m"
+HipRWT2m.filtered$Disease <- "AD_control"
+HipRWT2m.filtered$Model <- "Control"
+```
+
+
+
+
+
+# HipR-WT-G2-2m - WT
+```{r}
+# load data from the original and filtered h5 file
+HipRWT2mG2.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HipR-WT-G2-2m.h5", use.names = TRUE)
+HipRWT2mG2.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HipR-WT-G2-2m_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+HipRWT2mG2.raw <- CreateSeuratObject(counts = HipRWT2mG2.raw)
+HipRWT2mG2.filtered <- CreateSeuratObject(counts = HipRWT2mG2.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(HipRWT2mG2.filtered)
+HipRWT2mG2.raw <- HipRWT2mG2.raw[,colnames(HipRWT2mG2.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(HipRWT2mG2.raw),feat$symbol)
+features <- feat[x,]
+
+HipRWT2mG2.raw$MitoPercent <- PercentageFeatureSet(HipRWT2mG2.raw, pattern = "^mt-")
+HipRWT2mG2.raw$Condition <- "Wildtype"
+HipRWT2mG2.raw$Genotype <- "Wildtype"
+HipRWT2mG2.raw$StudyID <- "GSE143758"
+HipRWT2mG2.raw$Sample <- "HipRWT2mG2"
+HipRWT2mG2.raw$Gender <- "Male"
+HipRWT2mG2.raw$BrainRegion <- "Hippocampus"
+HipRWT2mG2.raw$StudyName <- "Habib 5XFAD"
+HipRWT2mG2.raw$data.type <- "Single Nuclei"
+HipRWT2mG2.raw$Age <- "1.5m"
+HipRWT2mG2.raw$Disease <- "AD_control"
+HipRWT2mG2.raw$Model <- "Control"
+
+HipRWT2mG2.filtered$MitoPercent <- PercentageFeatureSet(HipRWT2mG2.filtered, pattern = "^mt-")
+HipRWT2mG2.filtered$Condition <- "Wildtype"
+HipRWT2mG2.filtered$Genotype <- "Wildtype"
+HipRWT2mG2.filtered$StudyID <- "GSE143758"
+HipRWT2mG2.filtered$Sample <- "HipRWT2mG2"
+HipRWT2mG2.filtered$Gender <- "Male"
+HipRWT2mG2.filtered$BrainRegion <- "Hippocampus"
+HipRWT2mG2.filtered$StudyName <- "Habib 5XFAD"
+HipRWT2mG2.filtered$data.type <- "Single Nuclei"
+HipRWT2mG2.filtered$Age <- "1.5m"
+HipRWT2mG2.filtered$Disease <- "AD_control"
+HipRWT2mG2.filtered$Model <- "Control"
+```
+
+
+
+
+
+# HipR-WT-G2-14m - WT
+```{r}
+# load data from the original and filtered h5 file
+HipRWT14m.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HipR-WT-G2-14m.h5", use.names = TRUE)
+HipRWT14m.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HipR-WT-G2-14m_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+HipRWT14m.raw <- CreateSeuratObject(counts = HipRWT14m.raw)
+HipRWT14m.filtered <- CreateSeuratObject(counts = HipRWT14m.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(HipRWT14m.filtered)
+HipRWT14m.raw <- HipRWT14m.raw[,colnames(HipRWT14m.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(HipRWT14m.raw),feat$symbol)
+features <- feat[x,]
+
+HipRWT14m.raw$MitoPercent <- PercentageFeatureSet(HipRWT14m.raw, pattern = "^mt-")
+HipRWT14m.raw$Condition <- "Wildtype"
+HipRWT14m.raw$Genotype <- "Wildtype"
+HipRWT14m.raw$StudyID <- "GSE143758"
+HipRWT14m.raw$Sample <- "HipRWT14m"
+HipRWT14m.raw$Gender <- "Male"
+HipRWT14m.raw$BrainRegion <- "Hippocampus"
+HipRWT14m.raw$StudyName <- "Habib 5XFAD"
+HipRWT14m.raw$data.type <- "Single Nuclei"
+HipRWT14m.raw$Age <- "14m"
+HipRWT14m.raw$Disease <- "AD_control"
+HipRWT14m.raw$Model <- "Control"
+
+HipRWT14m.filtered$MitoPercent <- PercentageFeatureSet(HipRWT14m.filtered, pattern = "^mt-")
+HipRWT14m.filtered$Condition <- "Wildtype"
+HipRWT14m.filtered$Genotype <- "Wildtype"
+HipRWT14m.filtered$StudyID <- "GSE143758"
+HipRWT14m.filtered$Sample <- "HipRWT14m"
+HipRWT14m.filtered$Gender <- "Male"
+HipRWT14m.filtered$BrainRegion <- "Hippocampus"
+HipRWT14m.filtered$StudyName <- "Habib 5XFAD"
+HipRWT14m.filtered$data.type <- "Single Nuclei"
+HipRWT14m.filtered$Age <- "14m"
+HipRWT14m.filtered$Disease <- "AD_control"
+HipRWT14m.filtered$Model <- "Control"
+```
+
+
+
+
+
+# HipR-WT-G3-2w - WT
+```{r}
+# load data from the original and filtered h5 file
+HipRWT2w.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HipR-WT-G3-2w.h5", use.names = TRUE)
+HipRWT2w.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HipR-WT-G3-2w_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+HipRWT2w.raw <- CreateSeuratObject(counts = HipRWT2w.raw)
+HipRWT2w.filtered <- CreateSeuratObject(counts = HipRWT2w.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(HipRWT2w.filtered)
+HipRWT2w.raw <- HipRWT2w.raw[,colnames(HipRWT2w.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(HipRWT2w.raw),feat$symbol)
+features <- feat[x,]
+
+HipRWT2w.raw$MitoPercent <- PercentageFeatureSet(HipRWT2w.raw, pattern = "^mt-")
+HipRWT2w.raw$Condition <- "Wildtype"
+HipRWT2w.raw$Genotype <- "Wildtype"
+HipRWT2w.raw$StudyID <- "GSE143758"
+HipRWT2w.raw$Sample <- "HipRWT2w"
+HipRWT2w.raw$Gender <- "Male"
+HipRWT2w.raw$BrainRegion <- "Hippocampus"
+HipRWT2w.raw$StudyName <- "Habib 5XFAD"
+HipRWT2w.raw$data.type <- "Single Nuclei"
+HipRWT2w.raw$Age <- "7m"
+HipRWT2w.raw$Disease <- "AD_control"
+HipRWT2w.raw$Model <- "Control"
+
+HipRWT2w.filtered$MitoPercent <- PercentageFeatureSet(HipRWT2w.filtered, pattern = "^mt-")
+HipRWT2w.filtered$Condition <- "Wildtype"
+HipRWT2w.filtered$Genotype <- "Wildtype"
+HipRWT2w.filtered$StudyID <- "GSE143758"
+HipRWT2w.filtered$Sample <- "HipRWT2w"
+HipRWT2w.filtered$Gender <- "Male"
+HipRWT2w.filtered$BrainRegion <- "Hippocampus"
+HipRWT2w.filtered$StudyName <- "Habib 5XFAD"
+HipRWT2w.filtered$data.type <- "Single Nuclei"
+HipRWT2w.filtered$Age <- "7m"
+HipRWT2w.filtered$Disease <- "AD_control"
+HipRWT2w.filtered$Model <- "Control"
+```
+
+
+
+
+
+# HipR-WT-G1-13m - WT
+```{r}
+# load data from the original and filtered h5 file
+HipRWT13m.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HipR-WT-G1-13m.h5", use.names = TRUE)
+HipRWT13m.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HipR-WT-G1-13m_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+HipRWT13m.raw <- CreateSeuratObject(counts = HipRWT13m.raw)
+HipRWT13m.filtered <- CreateSeuratObject(counts = HipRWT13m.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(HipRWT13m.filtered)
+HipRWT13m.raw <- HipRWT13m.raw[,colnames(HipRWT13m.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(HipRWT13m.raw),feat$symbol)
+features <- feat[x,]
+
+HipRWT13m.raw$MitoPercent <- PercentageFeatureSet(HipRWT13m.raw, pattern = "^mt-")
+HipRWT13m.raw$Condition <- "Wildtype"
+HipRWT13m.raw$Genotype <- "Wildtype"
+HipRWT13m.raw$StudyID <- "GSE143758"
+HipRWT13m.raw$Sample <- "HipRWT13m"
+HipRWT13m.raw$Gender <- "Male"
+HipRWT13m.raw$BrainRegion <- "Hippocampus"
+HipRWT13m.raw$StudyName <- "Habib 5XFAD"
+HipRWT13m.raw$data.type <- "Single Nuclei"
+HipRWT13m.raw$Age <- "13m"
+HipRWT13m.raw$Disease <- "AD_control"
+HipRWT13m.raw$Model <- "Control"
+
+HipRWT13m.filtered$MitoPercent <- PercentageFeatureSet(HipRWT13m.filtered, pattern = "^mt-")
+HipRWT13m.filtered$Condition <- "Wildtype"
+HipRWT13m.filtered$Genotype <- "Wildtype"
+HipRWT13m.filtered$StudyID <- "GSE143758"
+HipRWT13m.filtered$Sample <- "HipRWT13m"
+HipRWT13m.filtered$Gender <- "Male"
+HipRWT13m.filtered$BrainRegion <- "Hippocampus"
+HipRWT13m.filtered$StudyName <- "Habib 5XFAD"
+HipRWT13m.filtered$data.type <- "Single Nuclei"
+HipRWT13m.filtered$Age <- "13m"
+HipRWT13m.filtered$Disease <- "AD_control"
+HipRWT13m.filtered$Model <- "Control"
+```
+
+
+
+
+
+# HipR-WT-G1-4w - WT
+```{r}
+# load data from the original and filtered h5 file
+HipRWT4w.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HipR-WT-G1-4w.h5", use.names = TRUE)
+HipRWT4w.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/HipR-WT-G1-4w_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+HipRWT4w.raw <- CreateSeuratObject(counts = HipRWT4w.raw)
+HipRWT4w.filtered <- CreateSeuratObject(counts = HipRWT4w.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(HipRWT4w.filtered)
+HipRWT4w.raw <- HipRWT4w.raw[,colnames(HipRWT4w.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(HipRWT4w.raw),feat$symbol)
+features <- feat[x,]
+
+HipRWT4w.raw$MitoPercent <- PercentageFeatureSet(HipRWT4w.raw, pattern = "^mt-")
+HipRWT4w.raw$Condition <- "Wildtype"
+HipRWT4w.raw$Genotype <- "Wildtype"
+HipRWT4w.raw$StudyID <- "GSE143758"
+HipRWT4w.raw$Sample <- "HipRWT4w"
+HipRWT4w.raw$Gender <- "Male"
+HipRWT4w.raw$BrainRegion <- "Hippocampus"
+HipRWT4w.raw$StudyName <- "Habib 5XFAD"
+HipRWT4w.raw$data.type <- "Single Nuclei"
+HipRWT4w.raw$Age <- "1.5m"
+HipRWT4w.raw$Disease <- "AD_control"
+HipRWT4w.raw$Model <- "Control"
+
+HipRWT4w.filtered$MitoPercent <- PercentageFeatureSet(HipRWT4w.filtered, pattern = "^mt-")
+HipRWT4w.filtered$Condition <- "Wildtype"
+HipRWT4w.filtered$Genotype <- "Wildtype"
+HipRWT4w.filtered$StudyID <- "GSE143758"
+HipRWT4w.filtered$Sample <- "HipRWT4w"
+HipRWT4w.filtered$Gender <- "Male"
+HipRWT4w.filtered$BrainRegion <- "Hippocampus"
+HipRWT4w.filtered$StudyName <- "Habib 5XFAD"
+HipRWT4w.filtered$data.type <- "Single Nuclei"
+HipRWT4w.filtered$Age <- "1.5m"
+HipRWT4w.filtered$Disease <- "AD_control"
+HipRWT4w.filtered$Model <- "Control"
+```
+
+
+
+
+
+# Untreated-Hip-R-N37 - 5XFAD
+```{r}
+# load data from the original and filtered h5 file
+UTN37.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/Untreated-Hip-R-N37_FPR_0.1.h5", use.names = TRUE)
+UTN37.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/Untreated-Hip-R-N37_FPR_0.1_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+UTN37.raw <- CreateSeuratObject(counts = UTN37.raw)
+UTN37.filtered <- CreateSeuratObject(counts = UTN37.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(UTN37.filtered)
+UTN37.raw <- UTN37.raw[,colnames(UTN37.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(UTN37.raw),feat$symbol)
+features <- feat[x,]
+
+UTN37.raw$MitoPercent <- PercentageFeatureSet(UTN37.raw, pattern = "^mt-")
+UTN37.raw$Condition <- "5XFAD"
+UTN37.raw$Genotype <- "5XFAD"
+UTN37.raw$StudyID <- "GSE143758"
+UTN37.raw$Sample <- "UTN37"
+UTN37.raw$Gender <- "Female"
+UTN37.raw$BrainRegion <- "Hippocampus"
+UTN37.raw$StudyName <- "Habib 5XFAD"
+UTN37.raw$data.type <- "Single Nuclei"
+UTN37.raw$Age <- "7m"
+UTN37.raw$Disease <- "AD"
+UTN37.raw$Model <- "5XFAD"
+
+UTN37.filtered$MitoPercent <- PercentageFeatureSet(UTN37.filtered, pattern = "^mt-")
+UTN37.filtered$Condition <- "5XFAD"
+UTN37.filtered$Genotype <- "5XFAD"
+UTN37.filtered$StudyID <- "GSE143758"
+UTN37.filtered$Sample <- "UTN37"
+UTN37.filtered$Gender <- "Female"
+UTN37.filtered$BrainRegion <- "Hippocampus"
+UTN37.filtered$StudyName <- "Habib 5XFAD"
+UTN37.filtered$data.type <- "Single Nuclei"
+UTN37.filtered$Age <- "7m"
+UTN37.filtered$Disease <- "AD"
+UTN37.filtered$Model <- "5XFAD"
+```
+
+# Wt-Hip-R- - WT
+```{r}
+# load data from the original and filtered h5 file
+WTN74.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/Wt-Hip-R-N74.h5", use.names = TRUE)
+WTN74.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/Wt-Hip-R-N74_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+WTN74.raw <- CreateSeuratObject(counts = WTN74.raw)
+WTN74.filtered <- CreateSeuratObject(counts = WTN74.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(WTN74.filtered)
+WTN74.raw <- WTN74.raw[,colnames(WTN74.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(WTN74.raw),feat$symbol)
+features <- feat[x,]
+
+WTN74.raw$MitoPercent <- PercentageFeatureSet(WTN74.raw, pattern = "^mt-")
+WTN74.raw$Condition <- "Wildtype"
+WTN74.raw$Genotype <- "Wildtype"
+WTN74.raw$StudyID <- "GSE143758"
+WTN74.raw$Sample <- "WTN74"
+WTN74.raw$Gender <- "Female"
+WTN74.raw$BrainRegion <- "Hippocampus"
+WTN74.raw$StudyName <- "Habib 5XFAD"
+WTN74.raw$data.type <- "Single Nuclei"
+WTN74.raw$Age <- "7m"
+WTN74.raw$Disease <- "AD_control"
+WTN74.raw$Model <- "Control"
+
+WTN74.filtered$MitoPercent <- PercentageFeatureSet(WTN74.filtered, pattern = "^mt-")
+WTN74.filtered$Condition <- "Wildtype"
+WTN74.filtered$Genotype <- "Wildtype"
+WTN74.filtered$StudyID <- "GSE143758"
+WTN74.filtered$Sample <- "WTN74"
+WTN74.filtered$Gender <- "Female"
+WTN74.filtered$BrainRegion <- "Hippocampus"
+WTN74.filtered$StudyName <- "Habib 5XFAD"
+WTN74.filtered$data.type <- "Single Nuclei"
+WTN74.filtered$Age <- "7m"
+WTN74.filtered$Disease <- "AD_control"
+WTN74.filtered$Model <- "Control"
+```
+
+
+
+
+
+
+# WT_M206_196m - WT
+```{r}
+# load data from the original and filtered h5 file
+WT_M206_196m.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/WT_M206_196m.h5", use.names = TRUE)
+WT_M206_196m.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/WT_M206_196m_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+WT_M206_196m.raw <- CreateSeuratObject(counts = WT_M206_196m.raw)
+WT_M206_196m.filtered <- CreateSeuratObject(counts = WT_M206_196m.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(WT_M206_196m.filtered)
+WT_M206_196m.raw <- WT_M206_196m.raw[,colnames(WT_M206_196m.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(WT_M206_196m.raw),feat$symbol)
+features <- feat[x,]
+
+WT_M206_196m.raw$MitoPercent <- PercentageFeatureSet(WT_M206_196m.raw, pattern = "^mt-")
+WT_M206_196m.raw$Condition <- "Wildtype"
+WT_M206_196m.raw$Genotype <- "Wildtype"
+WT_M206_196m.raw$StudyID <- "GSE143758"
+WT_M206_196m.raw$Sample <- "WT_M206_196m"
+WT_M206_196m.raw$Gender <- "Male"
+WT_M206_196m.raw$BrainRegion <- "Hippocampus"
+WT_M206_196m.raw$StudyName <- "Habib 5XFAD"
+WT_M206_196m.raw$data.type <- "Single Nuclei"
+WT_M206_196m.raw$Age <- "20m"
+WT_M206_196m.raw$Disease <- "AD_control"
+WT_M206_196m.raw$Model <- "Control"
+
+WT_M206_196m.filtered$MitoPercent <- PercentageFeatureSet(WT_M206_196m.filtered, pattern = "^mt-")
+WT_M206_196m.filtered$Condition <- "Wildtype"
+WT_M206_196m.filtered$Genotype <- "Wildtype"
+WT_M206_196m.filtered$StudyID <- "GSE143758"
+WT_M206_196m.filtered$Sample <- "WT_M206_196m"
+WT_M206_196m.filtered$Gender <- "Male"
+WT_M206_196m.filtered$BrainRegion <- "Hippocampus"
+WT_M206_196m.filtered$StudyName <- "Habib 5XFAD"
+WT_M206_196m.filtered$data.type <- "Single Nuclei"
+WT_M206_196m.filtered$Age <- "20m"
+WT_M206_196m.filtered$Disease <- "AD_control"
+WT_M206_196m.filtered$Model <- "Control"
+```
+
+
+
+
+
+
+
+# WT_M208_196m - WT
+```{r}
+# load data from the original and filtered h5 file
+WT_M208_196m.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/WT_M208_196m.h5", use.names = TRUE)
+WT_M208_196m.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/WT_M208_196m_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+WT_M208_196m.raw <- CreateSeuratObject(counts = WT_M208_196m.raw)
+WT_M208_196m.filtered <- CreateSeuratObject(counts = WT_M208_196m.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(WT_M208_196m.filtered)
+WT_M208_196m.raw <- WT_M208_196m.raw[,colnames(WT_M208_196m.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(WT_M208_196m.raw),feat$symbol)
+features <- feat[x,]
+
+WT_M208_196m.raw$MitoPercent <- PercentageFeatureSet(WT_M208_196m.raw, pattern = "^mt-")
+WT_M208_196m.raw$Condition <- "Wildtype"
+WT_M208_196m.raw$Genotype <- "Wildtype"
+WT_M208_196m.raw$StudyID <- "GSE143758"
+WT_M208_196m.raw$Sample <- "WT_M208_196m"
+WT_M208_196m.raw$Gender <- "Male"
+WT_M208_196m.raw$BrainRegion <- "Hippocampus"
+WT_M208_196m.raw$StudyName <- "Habib 5XFAD"
+WT_M208_196m.raw$data.type <- "Single Nuclei"
+WT_M208_196m.raw$Age <- "20m"
+WT_M208_196m.raw$Disease <- "AD_control"
+WT_M208_196m.raw$Model <- "Control"
+
+WT_M208_196m.filtered$MitoPercent <- PercentageFeatureSet(WT_M208_196m.filtered, pattern = "^mt-")
+WT_M208_196m.filtered$Condition <- "Wildtype"
+WT_M208_196m.filtered$Genotype <- "Wildtype"
+WT_M208_196m.filtered$StudyID <- "GSE143758"
+WT_M208_196m.filtered$Sample <- "WT_M208_196m"
+WT_M208_196m.filtered$Gender <- "Male"
+WT_M208_196m.filtered$BrainRegion <- "Hippocampus"
+WT_M208_196m.filtered$StudyName <- "Habib 5XFAD"
+WT_M208_196m.filtered$data.type <- "Single Nuclei"
+WT_M208_196m.filtered$Age <- "20m"
+WT_M208_196m.filtered$Disease <- "AD_control"
+WT_M208_196m.filtered$Model <- "Control"
+```
+
+
+
+
+
+
+
+# WT_M680_81m - WT
+```{r}
+# load data from the original and filtered h5 file
+WT_M680_81m.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/WT_M680_81m.h5", use.names = TRUE)
+WT_M680_81m.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/WT_M680_81m_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+WT_M680_81m.raw <- CreateSeuratObject(counts = WT_M680_81m.raw)
+WT_M680_81m.filtered <- CreateSeuratObject(counts = WT_M680_81m.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(WT_M680_81m.filtered)
+WT_M680_81m.raw <- WT_M680_81m.raw[,colnames(WT_M680_81m.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(WT_M680_81m.raw),feat$symbol)
+features <- feat[x,]
+
+WT_M680_81m.raw$MitoPercent <- PercentageFeatureSet(WT_M680_81m.raw, pattern = "^mt-")
+WT_M680_81m.raw$Condition <- "Wildtype"
+WT_M680_81m.raw$Genotype <- "Wildtype"
+WT_M680_81m.raw$StudyID <- "GSE143758"
+WT_M680_81m.raw$Sample <- "WT_M680_81m"
+WT_M680_81m.raw$Gender <- "Male"
+WT_M680_81m.raw$BrainRegion <- "Hippocampus"
+WT_M680_81m.raw$StudyName <- "Habib 5XFAD"
+WT_M680_81m.raw$data.type <- "Single Nuclei"
+WT_M680_81m.raw$Age <- "8m"
+WT_M680_81m.raw$Disease <- "AD_control"
+WT_M680_81m.raw$Model <- "Control"
+
+WT_M680_81m.filtered$MitoPercent <- PercentageFeatureSet(WT_M680_81m.filtered, pattern = "^mt-")
+WT_M680_81m.filtered$Condition <- "Wildtype"
+WT_M680_81m.filtered$Genotype <- "Wildtype"
+WT_M680_81m.filtered$StudyID <- "GSE143758"
+WT_M680_81m.filtered$Sample <- "WT_M680_81m"
+WT_M680_81m.filtered$Gender <- "Male"
+WT_M680_81m.filtered$BrainRegion <- "Hippocampus"
+WT_M680_81m.filtered$StudyName <- "Habib 5XFAD"
+WT_M680_81m.filtered$data.type <- "Single Nuclei"
+WT_M680_81m.filtered$Age <- "8m"
+WT_M680_81m.filtered$Disease <- "AD_control"
+WT_M680_81m.filtered$Model <- "Control"
+```
+
+
+
+
+
+
+
+# WT_M721_47m - WT
+```{r}
+# load data from the original and filtered h5 file
+WT_M721_47m.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/WT_M721_47m.h5", use.names = TRUE)
+WT_M721_47m.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/WT_M721_47m_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+WT_M721_47m.raw <- CreateSeuratObject(counts = WT_M721_47m.raw)
+WT_M721_47m.filtered <- CreateSeuratObject(counts = WT_M721_47m.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(WT_M721_47m.filtered)
+WT_M721_47m.raw <- WT_M721_47m.raw[,colnames(WT_M721_47m.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(WT_M721_47m.raw),feat$symbol)
+features <- feat[x,]
+
+WT_M721_47m.raw$MitoPercent <- PercentageFeatureSet(WT_M721_47m.raw, pattern = "^mt-")
+WT_M721_47m.raw$Condition <- "Wildtype"
+WT_M721_47m.raw$Genotype <- "Wildtype"
+WT_M721_47m.raw$StudyID <- "GSE143758"
+WT_M721_47m.raw$Sample <- "WT_M721_47m"
+WT_M721_47m.raw$Gender <- "Male"
+WT_M721_47m.raw$BrainRegion <- "Hippocampus"
+WT_M721_47m.raw$StudyName <- "Habib 5XFAD"
+WT_M721_47m.raw$data.type <- "Single Nuclei"
+WT_M721_47m.raw$Age <- "5m"
+WT_M721_47m.raw$Disease <- "AD_control"
+WT_M721_47m.raw$Model <- "Control"
+
+WT_M721_47m.filtered$MitoPercent <- PercentageFeatureSet(WT_M721_47m.filtered, pattern = "^mt-")
+WT_M721_47m.filtered$Condition <- "Wildtype"
+WT_M721_47m.filtered$Genotype <- "Wildtype"
+WT_M721_47m.filtered$StudyID <- "GSE143758"
+WT_M721_47m.filtered$Sample <- "WT_M721_47m"
+WT_M721_47m.filtered$Gender <- "Male"
+WT_M721_47m.filtered$BrainRegion <- "Hippocampus"
+WT_M721_47m.filtered$StudyName <- "Habib 5XFAD"
+WT_M721_47m.filtered$data.type <- "Single Nuclei"
+WT_M721_47m.filtered$Age <- "5m"
+WT_M721_47m.filtered$Disease <- "AD_control"
+WT_M721_47m.filtered$Model <- "Control"
+```
+
+
+
+
+
+
+
+# WT_M766_133m - WT
+```{r}
+# load data from the original and filtered h5 file
+WT_M766_133m.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/WT_M766_133m.h5", use.names = TRUE)
+WT_M766_133m.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/WT_M766_133m_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+WT_M766_133m.raw <- CreateSeuratObject(counts = WT_M766_133m.raw)
+WT_M766_133m.filtered <- CreateSeuratObject(counts = WT_M766_133m.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(WT_M766_133m.filtered)
+WT_M766_133m.raw <- WT_M766_133m.raw[,colnames(WT_M766_133m.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(WT_M766_133m.raw),feat$symbol)
+features <- feat[x,]
+
+WT_M766_133m.raw$MitoPercent <- PercentageFeatureSet(WT_M766_133m.raw, pattern = "^mt-")
+WT_M766_133m.raw$Condition <- "Wildtype"
+WT_M766_133m.raw$Genotype <- "Wildtype"
+WT_M766_133m.raw$StudyID <- "GSE143758"
+WT_M766_133m.raw$Sample <- "WT_M766_133m"
+WT_M766_133m.raw$Gender <- "Male"
+WT_M766_133m.raw$BrainRegion <- "Hippocampus"
+WT_M766_133m.raw$StudyName <- "Habib 5XFAD"
+WT_M766_133m.raw$data.type <- "Single Nuclei"
+WT_M766_133m.raw$Age <- "13m"
+WT_M766_133m.raw$Disease <- "AD_control"
+WT_M766_133m.raw$Model <- "Control"
+
+WT_M766_133m.filtered$MitoPercent <- PercentageFeatureSet(WT_M766_133m.filtered, pattern = "^mt-")
+WT_M766_133m.filtered$Condition <- "Wildtype"
+WT_M766_133m.filtered$Genotype <- "Wildtype"
+WT_M766_133m.filtered$StudyID <- "GSE143758"
+WT_M766_133m.filtered$Sample <- "WT_M766_133m"
+WT_M766_133m.filtered$Gender <- "Male"
+WT_M766_133m.filtered$BrainRegion <- "Hippocampus"
+WT_M766_133m.filtered$StudyName <- "Habib 5XFAD"
+WT_M766_133m.filtered$data.type <- "Single Nuclei"
+WT_M766_133m.filtered$Age <- "13m"
+WT_M766_133m.filtered$Disease <- "AD_control"
+WT_M766_133m.filtered$Model <- "Control"
+```
+
+
+
+
+
+
+
+# WT_M768_133m - WT
+```{r}
+# load data from the original and filtered h5 file
+WT_M768_133m.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/WT_M768_133m.h5", use.names = TRUE)
+WT_M768_133m.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE143758/WT_M768_133m_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+WT_M768_133m.raw <- CreateSeuratObject(counts = WT_M768_133m.raw)
+WT_M768_133m.filtered <- CreateSeuratObject(counts = WT_M768_133m.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(WT_M768_133m.filtered)
+WT_M768_133m.raw <- WT_M768_133m.raw[,colnames(WT_M768_133m.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(WT_M768_133m.raw),feat$symbol)
+features <- feat[x,]
+
+WT_M768_133m.raw$MitoPercent <- PercentageFeatureSet(WT_M768_133m.raw, pattern = "^mt-")
+WT_M768_133m.raw$Condition <- "Wildtype"
+WT_M768_133m.raw$Genotype <- "Wildtype"
+WT_M768_133m.raw$StudyID <- "GSE143758"
+WT_M768_133m.raw$Sample <- "WT_M768_133m"
+WT_M768_133m.raw$Gender <- "Male"
+WT_M768_133m.raw$BrainRegion <- "Hippocampus"
+WT_M768_133m.raw$StudyName <- "Habib 5XFAD"
+WT_M768_133m.raw$data.type <- "Single Nuclei"
+WT_M768_133m.raw$Age <- "13m"
+WT_M768_133m.raw$Disease <- "AD_control"
+WT_M768_133m.raw$Model <- "Control"
+
+WT_M768_133m.filtered$MitoPercent <- PercentageFeatureSet(WT_M768_133m.filtered, pattern = "^mt-")
+WT_M768_133m.filtered$Condition <- "Wildtype"
+WT_M768_133m.filtered$Genotype <- "Wildtype"
+WT_M768_133m.filtered$StudyID <- "GSE143758"
+WT_M768_133m.filtered$Sample <- "WT_M768_133m"
+WT_M768_133m.filtered$Gender <- "Male"
+WT_M768_133m.filtered$BrainRegion <- "Hippocampus"
+WT_M768_133m.filtered$StudyName <- "Habib 5XFAD"
+WT_M768_133m.filtered$data.type <- "Single Nuclei"
+WT_M768_133m.filtered$Age <- "13m"
+WT_M768_133m.filtered$Disease <- "AD_control"
+WT_M768_133m.filtered$Model <- "Control"
+```
+
+
+
+
+
+
+
+
+# Merge Datasets
+```{r warning=FALSE}
+raw.data <- merge(x=AD_M15_47m.raw,y=c(AD_M704_73m.raw,CRTX_7mAD343.raw,CRTX_7mWT341.raw,CRTX_10mAD135.raw,CRTX_10mWT124.raw,HIP_4mAD186.raw,HIP_4mWT185.raw,HIP_6wAD331.raw,HIP_6wWT330.raw,HIP_7mAD343.raw,HIP_7mWT341.raw,HIP_10mAD135.raw,HIP_10mWT124.raw,HIP_ADuntreat_52.raw,HIP_WT_39.raw,HIP_WT_74.raw,HipRAD2m.raw,HipRAD4w.raw,HipRAD13m.raw,HipRAD2mG2.raw,HipRAD14m.raw,HipRAD2w.raw,HipRWT2m.raw,HipRWT2mG2.raw,HipRWT14m.raw,HipRWT2w.raw,HipRWT13m.raw,HipRWT4w.raw,UTN37.raw,WTN74.raw,WT_M206_196m.raw,WT_M208_196m.raw,WT_M680_81m.raw,WT_M721_47m.raw,WT_M766_133m.raw,WT_M768_133m.raw),add.cell.ids = c("AD_M15_47m", "AD_M704_73m","CRTX_7mAD343","CRTX_7mWT341","CRTX_10mAD135","CRTX_10mWT124","HIP_4mAD186","HIP_4mWT185","HIP_6wAD331","HIP_6wWT330","HIP_7mAD343","HIP_7mWT341","HIP_10mAD135","HIP_10mWT124","untreat_52","HIP_WT_39","HIP_WT_74","HipR-AD-G1-2m","HipR-AD-G1-4w","HipR-AD-G1-13m","HipR-AD-G2-2m","HipR-AD-G2-14","HipR-AD-G3-2","HipR-WT-G1-2m","HipR-WT-G2-2m","HipR-WT-G2-14m","HipR-WT-G3-2w","HipR-WT-G1-13m","HipR-WT-G1-4w","N37","N74","WT_M206_196m","WT_M208_196m","WT_M680_81m","WT_M721_47m","WT_M766_133m","WT_M768_133m"))
+raw.data@assays$RNA@meta.features <- features
+rownames(raw.data@assays$RNA@meta.features)<- rownames(raw.data)
+
+filtered.data <- merge(x=AD_M15_47m.filtered,y=c(AD_M704_73m.filtered,CRTX_7mAD343.filtered,CRTX_7mWT341.filtered,CRTX_10mAD135.filtered,CRTX_10mWT124.filtered,HIP_4mAD186.filtered,HIP_4mWT185.filtered,HIP_6wAD331.filtered,HIP_6wWT330.filtered,HIP_7mAD343.filtered,HIP_7mWT341.filtered,HIP_10mAD135.filtered,HIP_10mWT124.filtered,HIP_ADuntreat_52.filtered,HIP_WT_39.filtered,HIP_WT_74.filtered,HipRAD2m.filtered,HipRAD4w.filtered,HipRAD13m.filtered,HipRAD2mG2.filtered,HipRAD14m.filtered,HipRAD2w.filtered,HipRWT2m.filtered,HipRWT2mG2.filtered,HipRWT14m.filtered,HipRWT2w.filtered,HipRWT13m.filtered,HipRWT4w.filtered,UTN37.filtered,WTN74.filtered,WT_M206_196m.filtered,WT_M208_196m.filtered,WT_M680_81m.filtered,WT_M721_47m.filtered,WT_M766_133m.filtered,WT_M768_133m.filtered),add.cell.ids = c("AD_M15_47m", "AD_M704_73m","CRTX_7mAD343","CRTX_7mWT341","CRTX_10mAD135","CRTX_10mWT124","HIP_4mAD186","HIP_4mWT185","HIP_6wAD331","HIP_6wWT330","HIP_7mAD343","HIP_7mWT341","HIP_10mAD135","HIP_10mWT124","untreat_52","HIP_WT_39","HIP_WT_74","HipR-AD-G1-2m","HipR-AD-G1-4w","HipR-AD-G1-13m","HipR-AD-G2-2m","HipR-AD-G2-14","HipR-AD-G3-2","HipR-WT-G1-2m","HipR-WT-G2-2m","HipR-WT-G2-14m","HipR-WT-G3-2w","HipR-WT-G1-13m","HipR-WT-G1-4w","N37","N74","WT_M206_196m","WT_M208_196m","WT_M680_81m","WT_M721_47m","WT_M766_133m","WT_M768_133m"))
+filtered.data@assays$RNA@meta.features <- features
+rownames(filtered.data@assays$RNA@meta.features)<- rownames(filtered.data)
+
+```
+
+# Process Datasets
+```{r Seurat Process, message=FALSE, warning=FALSE}
+rm(list=setdiff(ls(), c("raw.data","filtered.data","runSeurat","scoreCells","features","ga.ctm")))
+gc()
+raw.data <- subset(raw.data, subset=nCount_RNA > 150)
+filtered.data <- subset(filtered.data, subset=nCount_RNA > 150)
+
+# Process raw datasets in Seurat
+raw.data <- runSeurat(raw.data)
+gc()
+raw.data <- scoreCells(raw.data, seurat = TRUE)
+
+filtered.data <- runSeurat(filtered.data)
+filtered.data <- scoreCells(filtered.data, seurat = TRUE)
+
+```
+# Label Astrocytes
+```{r Label Astrocytes}
+library(SingleR)
+library(BiocParallel)
+
+#load reference dataset
+ref <- DataSetDB::getDatasetAsSE("DS000002655") #NGS2722 labels
+names(assays(ref)) <- c("counts","logcounts")
+
+ref <- ref[,colSums(counts(ref)) > 0]
+ref <- ref[,!is.na(ref$biologicalInterest)]
+features <- rownames(ref)
+symbols <- ref@rowRanges@elementMetadata@listData[["symbol"]]
+ref <- as(ref,"SummarizedExperiment")
+rownames(ref) <- symbols
+
+filtered.dataSE <- as.SingleCellExperiment(filtered.data)
+pred <- SingleR(test = filtered.dataSE, ref = ref,
+                  labels = ref$biologicalInterest, de.method="wilcox", BPPARAM = MulticoreParam() )
+filtered.data$FineLabels <- pred$labels
+filtered.data$PrunedLabels <- pred$pruned.labels
+```
+
+## Plot Umaps
+```{r}
+p1 <- DimPlot(raw.data,label = TRUE, pt.size=1) + ggtitle("Raw Dataset") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold"),legend.position = "none")
+p2 <- DimPlot(filtered.data,label=TRUE,pt.size=1) + ggtitle("Filtered Dataset")+
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold"),legend.position = "none")
+grid.arrange( p1, p2,nrow=1,top = textGrob("Seurat Clusters",gp=gpar(fontsize=20,font=3)))
+```
+
+## Find Astrocytes
+```{r message=FALSE, warning=FALSE}
+grid.arrange( FeaturePlot(raw.data,features= "astrocyte",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Raw Dataset") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Astrocyte") ,
+ FeaturePlot(filtered.data,features= "astrocyte",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Filtered Dataset") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Astrocyte"),
+ nrow=1,top = textGrob("Astrocyte Scores",gp=gpar(fontsize=20,font=3)))
+
+grid.arrange( DimPlot(filtered.data,group.by =  "FineLabels",reduction="umap", pt.size = 1, label = TRUE,repel = TRUE) + theme_void() + ggtitle("Cell Labels") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")),
+ FeaturePlot(filtered.data,features= "astrocyte",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Filtered Dataset") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Astrocyte"),
+ nrow=1,top = textGrob("Astrocyte Scores",gp=gpar(fontsize=20,font=3)))
+
+
+grid.arrange( FeaturePlot(raw.data,features= "microglia",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Raw Dataset") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "microglia") ,
+ FeaturePlot(filtered.data,features= "microglia",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Filtered Dataset") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "microglia"),
+ nrow=1,top = textGrob("Microglia Scores",gp=gpar(fontsize=20,font=3)))
+
+grid.arrange( DimPlot(filtered.data,group.by =  "FineLabels",reduction="umap", pt.size = 1, label = TRUE,repel = TRUE) + theme_void() + ggtitle("Cell Labels") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) ,
+ FeaturePlot(filtered.data,features= "microglia",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Filtered Dataset") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Astrocyte"),
+ nrow=1,top = textGrob("Astrocyte Scores",gp=gpar(fontsize=20,font=3)))
+
+```
+
+### Expression Plots
+```{r message=FALSE, warning=FALSE}
+grid.arrange(
+  VlnPlot(raw.data,features = "C1qa",group.by = "Model",log = TRUE) + ggtitle("Raw Dataset"),
+  VlnPlot(filtered.data,features = "C1qa",group.by = "Model",log=TRUE) + ggtitle("Filtered Dataset"),
+  nrow=1,top = textGrob("Expression of C1qa", gp=gpar(fontsize=20,font=3))
+)
+
+
+grid.arrange( FeaturePlot(raw.data,features= "C1qa",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Raw Dataset") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "C1qa Expression") ,
+ FeaturePlot(filtered.data,features= "C1qa",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Filtered Dataset") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "C1qa Expression"),
+ nrow=1,top = textGrob("C1qa Expression",gp=gpar(fontsize=20,font=3)))
+
+
+```
+
+# Doublet Detection
+```{r Run Doublet Finder, message=FALSE, warning=FALSE}
+filtered.data <- subset(filtered.data, subset = nCount_RNA > 10)
+raw.data <- subset(raw.data, subset = nCount_RNA > 10)
+
+filtered.sce <- as.SingleCellExperiment(filtered.data)
+raw.sce <- as.SingleCellExperiment(raw.data)
+
+filtered.sce <- scDblFinder(filtered.sce,nfeatures = 1500, samples ="Sample")
+raw.sce <- scDblFinder(raw.sce,nfeatures = 1500, samples ="Sample")
+
+
+```
+
+# Plot Doublet results
+
+```{r Transfer labels and Plot umap, echo=FALSE, message=FALSE}
+filtered.data$scDblFinder.class <- filtered.sce$scDblFinder.class
+filtered.data$scDblFinder.score <- filtered.sce$scDblFinder.score
+filtered.data$scDblFinder.weighted <- filtered.sce$scDblFinder.weighted
+filtered.data$scDblFinder.cxds_score <- filtered.sce$scDblFinder.cxds_score
+
+raw.data$scDblFinder.class <- raw.sce$scDblFinder.class
+raw.data$scDblFinder.score <- raw.sce$scDblFinder.score
+raw.data$scDblFinder.weighted <- raw.sce$scDblFinder.weighted
+raw.data$scDblFinder.cxds_score <- raw.sce$scDblFinder.cxds_score
+
+grid.arrange(
+  DimPlot(raw.data, group.by = "scDblFinder.class",pt.size = 1) + ggtitle("Raw Dataset"),
+  DimPlot(filtered.data, group.by = "scDblFinder.class",pt.size = 1) + ggtitle("Filtered Dataset"),
+  nrow=1,top = textGrob("Doublet Class",gp=gpar(fontsize=20,font=3)))
+
+```
+
+# Subset Astrocytes from filtered data
+```{r Astrocytes , fig.show='hold'}
+
+astros <- subset(filtered.data, subset = FineLabels == "astrocyte")
+astros <- runSeurat(astros)
+
+grid.arrange(
+  DimPlot(astros,label = TRUE, pt.size=1) + ggtitle("Seurat Clusters") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold"),legend.position = "none") ,
+  FeaturePlot(astros,features= "astrocyte",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Astrocyte Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Astrocyte"),
+  nrow=1)
+
+grid.arrange(
+  FeaturePlot(astros,features = "Gfap",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Gfap") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd")),
+  FeaturePlot(astros,features = "Aldh1l1",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Aldh1l1") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd")),
+  nrow=1)
+
+grid.arrange(
+  FeaturePlot(astros,features = "Gja1",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Gja1") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd")),
+  FeaturePlot(astros,features = "Aqp4",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Aqp4") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd")),
+  nrow=1)
+
+```
+
+## Astrocyte numbers
+```{r numbers}
+print(paste0("There are a total of ", format(dim(astros)[2],big.mark=",",scientific=FALSE),
+             " astrocytes.",
+             " From which ", format(table(astros$Disease)["AD"],big.mark=",",scientific=FALSE),
+             " are Diseased."))
+
+print(paste0("There were a total of ", format(dim(filtered.data)[2],big.mark=",",scientific=FALSE),
+             " cells."))
+
+print(paste0("Astrocytes account for ", format( round((dim(astros)[2]/dim(filtered.data)[2])*100,2), big.mark=",",scientific=FALSE),
+             "% of cells."))
+
+
+```
+
+# Save Dataasets
+```{r}
+saveRDS(astros,"/gstore/project/neurodegen_meta/data/cellbender/GSE143758/Astrocytes.RDS")
+
+saveRDS(filtered.data,"/gstore/project/neurodegen_meta/data/cellbender/GSE143758/filteredData.RDS")
+saveRDS(raw.data,"/gstore/project/neurodegen_meta/data/cellbender/GSE143758/rawData.RDS")
+```

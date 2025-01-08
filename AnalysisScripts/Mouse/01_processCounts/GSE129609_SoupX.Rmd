@@ -1,0 +1,230 @@
+---
+title: "GSE129609_Soupx"
+author: "Tawaun Lucas"
+date: "1/12/2023"
+output: 
+  html_document:
+    toc: true # table of content true
+    toc_depth: 3  # upto three depths of headings (specified by #, ## and ###)
+    toc_float: true
+    number_sections: true  ## if you want number sections at each table header
+    theme: united  # many options for theme, this one is my favorite.
+    highlight: tango  # specifies the syntax highlighting style
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(out.width="100%")
+
+library(Seurat)
+library(SingleCellExperiment)
+library(metaGP)
+library(gpExtra)
+library(dplyr)
+library(gridExtra)
+library(grid)
+library(RColorBrewer)
+library(ggplot2)
+library(scDblFinder)
+library(SoupX)
+
+gac <- installedGeneAnnotationCollection("Neuroinflammation")
+mouseHipp <- gac$`Mouse Hippocampus scRNASeq Markers`
+ga.ctm <- geneSetList(mouseHipp) # "cell type markers"
+ga.ctm <- lapply(ga.ctm, unlist) %>% lapply(unname)
+
+```
+
+```{r Functions, include=FALSE}
+scoreCells <- function(data,seurat=FALSE,geneSetList=ga.ctm){
+for (gene_set in names(geneSetList)) {
+score_gene_set <- geneSetList[[gene_set]]
+if(seurat==FALSE){
+score_gene_set <- intersect(score_gene_set,rownames(data))
+scores_by_cell <- colMeans(assay(data, 'logcounts')[score_gene_set,],na.rm = TRUE)
+}
+if(seurat==TRUE){
+data1 <- as.SingleCellExperiment(data)
+rownames(data1) <- features$ID
+score_gene_set <- intersect(score_gene_set,rownames(data1))
+scores_by_cell <- colMeans(assay(data1, 'logcounts')[score_gene_set,],na.rm = TRUE)
+}
+data[[gene_set]] <- scores_by_cell
+}
+return(data)
+}
+
+runSeurat <- function(obj){
+obj <- NormalizeData(obj,verbose=FALSE)
+obj <- FindVariableFeatures(obj)
+obj <- ScaleData(object = obj, verbose=FALSE)
+obj <- RunPCA(obj, npcs = 30,verbose=FALSE)
+obj <- FindNeighbors(obj, reduction = "pca",dims=1:20,verbose=FALSE)
+obj <- FindClusters(obj, resolution = 0.5,verbose=FALSE)
+obj <- RunUMAP(obj,reduction= "pca",dims=1:20,verbose=FALSE)
+print("Seurat Pipeline Finished!")
+return(obj)
+}
+```
+
+
+# Load Data
+```{r}
+data <- readRDS("/gstore/project/neurodegen_meta/data/GSE129609.RDS")
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-3"))
+x <- match(rownames(data),feat$symbol)
+features <- feat[x,]
+data@assays$RNA@meta.features <- features
+rownames(data@assays$RNA@meta.features)<- rownames(data)
+data <- scoreCells(data, seurat = TRUE)
+data<- runSeurat(data)
+
+counts <- GetAssayData(data,"counts")
+```
+
+# Plot Expression Before SoupX
+
+```{r message=FALSE, warning=FALSE}
+grid.arrange(VlnPlot(data,features = "C1qa",group.by = "Model",slot = "data") + 
+               ggtitle("C1qa Expression") + theme(legend.position = "none"),
+             VlnPlot(data,features = "Tyrobp",group.by = "Model",slot = "data") + 
+               ggtitle("Tyrobp Expression") + theme(legend.position = "none"),
+             nrow=1)
+
+grid.arrange(VlnPlot(data,features = "C1qc",group.by = "Model",slot = "data") +
+               ggtitle("C1qc Expression") + theme(legend.position = "none"),
+             VlnPlot(data,features = "Trem2",group.by = "Model",slot = "data") +
+               ggtitle("Trem2 Expression") + theme(legend.position = "none"),
+             nrow=1)
+
+
+
+grid.arrange( FeaturePlot(data,features= "C1qa",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("C1qa Expression") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "C1qa Expression") ,
+ FeaturePlot(data,features= "Tyrobp",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Tyrobp Expression") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Tyrobp Expression"),
+ nrow=1)
+
+grid.arrange( FeaturePlot(data,features= "C1qc",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("C1qc Expression") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "C1qc Expression") ,
+ FeaturePlot(data,features= "Trem2",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Trem2 Expression") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Trem2 Expression"),
+ nrow=1)
+
+```
+
+# Run SoupX
+
+```{r}
+scNoDrops = SoupChannel(counts, counts, calcSoupProfile = FALSE)
+# Calculate soup profile
+soupProf = data.frame(row.names = rownames(counts), est = rowSums(counts)/sum(counts), counts = rowSums(counts))
+scNoDrops = setSoupProfile(scNoDrops, soupProf)
+
+scNoDrops <- setClusters(scNoDrops, setNames(data$seurat_clusters, rownames(data@meta.data)))
+scNoDrops = setDR(scNoDrops, data.frame(data@reductions[["umap"]]@cell.embeddings))
+
+dd = data@meta.data[data$seurat_clusters, ]
+dd$RD1 <- data.frame(data@reductions[["umap"]]@cell.embeddings)$UMAP_1
+dd$RD2 <- data.frame(data@reductions[["umap"]]@cell.embeddings)$UMAP_2
+mids = aggregate(cbind(RD1, RD2) ~ seurat_clusters, data = dd, FUN = mean)
+gg = ggplot(dd, aes(RD1, RD2)) + geom_point(aes(colour = seurat_clusters), size = 0.2) + 
+    geom_label(data = mids, aes(label = seurat_clusters)) + ggtitle("Seurat Clusters") + 
+    guides(colour = guide_legend(override.aes = list(size = 1)))
+plot(gg)
+
+nonExpressedGeneList = list(MG = c("C1qa", "C1qc", "Trem2","Tyrobp"),
+                            EC=c("Pecam1","Vegfa","Lyve1","Vwf","Cldn5"),
+                            OG=c("Mbp","Mog","Mag","Ncmap","Myrf","Omg"),
+                            AS=c("Gja1","Aldh1l1","Aqp4"))
+useToEst = estimateNonExpressingCells(scNoDrops, nonExpressedGeneList = nonExpressedGeneList)
+
+scNoDrops = calculateContaminationFraction(scNoDrops, nonExpressedGeneList, useToEst = useToEst)
+out = adjustCounts(scNoDrops)
+plotChangeMap(scNoDrops, out, "C1qa")
+plotChangeMap(scNoDrops, out, "Pecam1")
+plotChangeMap(scNoDrops, out, "Mbp")
+plotChangeMap(scNoDrops, out, "Gja1")
+
+DropletUtils:::write10xCounts("/gstore/project/neurodegen_meta/data/GSE129609_strainedCounts", out,overwrite = TRUE)
+```
+
+# Look at cleaned data
+```{r}
+
+data.cleaned <- CreateSeuratObject(out,meta.data = data@meta.data)
+data.cleaned <- runSeurat(data.cleaned)
+```
+
+## Expression Plots
+```{r}
+data.astros <- subset(data, subset= FineLabels=="astrocyte")
+clean.astros <- subset(data.cleaned, subset= FineLabels=="astrocyte")
+data.astros <-runSeurat(data.astros)
+clean.astros <-runSeurat(clean.astros)
+
+grid.arrange(VlnPlot(data.astros,features = "C1qa",group.by = "Model",slot = "data") + 
+               ggtitle("Before") + theme(legend.position = "none"),
+             VlnPlot(clean.astros,features = "C1qa",group.by = "Model",slot = "data") + 
+               ggtitle("After") + theme(legend.position = "none"),
+             nrow=1,top = textGrob("C1qa Expression",gp=gpar(fontsize=20,font=3)))
+grid.arrange(VlnPlot(data.astros,features = "Mbp",group.by = "Model",slot = "data") + 
+               ggtitle("Before") + theme(legend.position = "none"),
+             VlnPlot(clean.astros,features = "Mbp",group.by = "Model",slot = "data") + 
+               ggtitle("After") + theme(legend.position = "none"),
+             nrow=1,top = textGrob("Mbp Expression",gp=gpar(fontsize=20,font=3)))
+grid.arrange(VlnPlot(data.astros,features = "Pecam1",group.by = "Model",slot = "data") + 
+               ggtitle("Before") + theme(legend.position = "none"),
+             VlnPlot(clean.astros,features = "Pecam1",group.by = "Model",slot = "data") + 
+               ggtitle("After") + theme(legend.position = "none"),
+             nrow=1,top = textGrob("C1qa Expression",gp=gpar(fontsize=20,font=3)))
+```
+
+# Plot astrocytes
+```{r}
+grid.arrange( DimPlot(data,group.by =  "FineLabels",reduction="umap", pt.size = 1, label = TRUE,repel = TRUE) + theme_void() + ggtitle("Cell Labels") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")),
+ FeaturePlot(data,features= "astrocyte",reduction="umap", pt.size = 1,order = TRUE) +
+  theme_void() + ggtitle("Raw Dataset") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 4, name = "YlOrRd"))+labs(colour = "Astrocyte"),
+ nrow=1,top = textGrob("Astrocyte Scores",gp=gpar(fontsize=20,font=3)))
+
+grid.arrange( FeaturePlot(data,features= "astrocyte",reduction="umap", pt.size = 1,order = TRUE) +
+  theme_void() + ggtitle("Raw Dataset") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 4, name = "YlOrRd"))+labs(colour = "Astrocyte") ,
+ FeaturePlot(data.cleaned,features= "astrocyte",reduction="umap", pt.size = 1,order = TRUE) +
+  theme_void() + ggtitle("Filtered Dataset") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 4, name = "YlOrRd"))+labs(colour = "Astrocyte"),
+ nrow=1,top = textGrob("Astrocyte Scores",gp=gpar(fontsize=20,font=3)))
+
+grid.arrange( FeaturePlot(data.astros,features= "astrocyte",reduction="umap", pt.size = 1,order = TRUE) +
+  theme_void() + ggtitle("Raw Dataset") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 4, name = "YlOrRd"))+labs(colour = "Astrocyte") ,
+ FeaturePlot(clean.astros,features= "astrocyte",reduction="umap", pt.size = 1,order = TRUE) +
+  theme_void() + ggtitle("Filtered Dataset") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 4, name = "YlOrRd"))+labs(colour = "Astrocyte"),
+ nrow=1,top = textGrob("Astrocyte Scores",gp=gpar(fontsize=20,font=3)))
+```
+
+# Save Dataset
+```{r}
+saveRDS(clean.astros,"/gstore/project/neurodegen_meta/data/cellbender/GSE129609/Astrocytes.RDS")
+saveRDS(data.cleaned,"/gstore/project/neurodegen_meta/data/cellbender/GSE129609/filteredData.RDS")
+saveRDS(data,"/gstore/project/neurodegen_meta/data/cellbender/GSE129609/rawData.RDS")
+
+```
+

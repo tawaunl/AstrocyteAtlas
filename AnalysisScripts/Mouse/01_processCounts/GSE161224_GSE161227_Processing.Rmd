@@ -1,0 +1,1391 @@
+---
+title: "GSE161224_GSE161227"
+author: "Tawaun Lucas"
+date: "12/9/2022"
+output: 
+  html_document:
+    toc: true # table of content true
+    toc_depth: 3  # upto three depths of headings (specified by #, ## and ###)
+    toc_float: true
+    number_sections: true  ## if you want number sections at each table header
+    theme: united  # many options for theme, this one is my favorite.
+    highlight: tango  # specifies the syntax highlighting style
+---
+# GSE161224 and GSE161227 - Zhao 3.5 & 5m Studies
+```{r setup, include=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(out.width="100%")
+
+library(Seurat)
+library(SingleCellExperiment)
+library(metaGP)
+library(gpExtra)
+library(dplyr)
+library(gridExtra)
+library(grid)
+library(RColorBrewer)
+library(ggplot2)
+library(scDblFinder)
+
+gac <- installedGeneAnnotationCollection("Neuroinflammation")
+mouseHipp <- gac$`Mouse Hippocampus scRNASeq Markers`
+ga.ctm <- geneSetList(mouseHipp) # "cell type markers"
+ga.ctm <- lapply(ga.ctm, unlist) %>% lapply(unname)
+
+```
+
+## Set up funtions for analysis
+<details>
+<summary>Click for to see code</summary>
+```{r Functions}
+scoreCells <- function(data,seurat=FALSE,geneSetList=ga.ctm){
+for (gene_set in names(geneSetList)) {
+score_gene_set <- geneSetList[[gene_set]]
+if(seurat==FALSE){
+score_gene_set <- intersect(score_gene_set,rownames(data))
+scores_by_cell <- colMeans(assay(data, 'logcounts')[score_gene_set,],na.rm = TRUE)
+}
+if(seurat==TRUE){
+data1 <- as.SingleCellExperiment(data)
+rownames(data1) <- features$ID
+score_gene_set <- intersect(score_gene_set,rownames(data1))
+scores_by_cell <- colMeans(assay(data1, 'logcounts')[score_gene_set,],na.rm = TRUE)
+}
+data[[gene_set]] <- scores_by_cell
+}
+return(data)
+}
+
+runSeurat <- function(obj){
+obj <- NormalizeData(obj,verbose=FALSE)
+obj <- FindVariableFeatures(obj)
+obj <- ScaleData(object = obj, verbose=FALSE)
+obj <- RunPCA(obj, npcs = 30,verbose=FALSE)
+obj <- FindNeighbors(obj, reduction = "pca",dims=1:20,verbose=FALSE)
+obj <- FindClusters(obj, resolution = 0.5,verbose=FALSE)
+obj <- RunUMAP(obj,reduction= "pca",dims=1:20,verbose=FALSE)
+print("Seurat Pipeline Finished!")
+return(obj)
+}
+```
+
+</details>
+
+
+# GSE161224 - Zhao 3.5m
+## TREM2-WT Control 
+
+### GEX_BU_EFTM_1
+```{r}
+# load data from the original and filtered h5 file
+GEX_BU_EFTM_1.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161224/GEX_BU_EFTM_1.h5", use.names = TRUE)
+GEX_BU_EFTM_1.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161224/GEX_BU_EFTM_1_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+GEX_BU_EFTM_1.raw <- CreateSeuratObject(counts = GEX_BU_EFTM_1.raw)
+GEX_BU_EFTM_1.filtered <- CreateSeuratObject(counts = GEX_BU_EFTM_1.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(GEX_BU_EFTM_1.filtered)
+GEX_BU_EFTM_1.raw <- GEX_BU_EFTM_1.raw[,colnames(GEX_BU_EFTM_1.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(GEX_BU_EFTM_1.raw),feat$symbol)
+features <- feat[x,]
+
+GEX_BU_EFTM_1.raw$MitoPercent <- PercentageFeatureSet(GEX_BU_EFTM_1.raw, pattern = "^mt-")
+GEX_BU_EFTM_1.raw$Condition <- "Control"
+GEX_BU_EFTM_1.raw$Genotype <- "5XFAD/TREM2-WT"
+GEX_BU_EFTM_1.raw$StudyID <- "GSE161224"
+GEX_BU_EFTM_1.raw$Sample <- "SRR13021300"
+GEX_BU_EFTM_1.raw$Gender <- "Mixed"
+GEX_BU_EFTM_1.raw$BrainRegion <- "Cortex"
+GEX_BU_EFTM_1.raw$StudyName <- "Zhao 5XFAD"
+GEX_BU_EFTM_1.raw$data.type <- "Single Cell"
+GEX_BU_EFTM_1.raw$Age <- "3.5m"
+GEX_BU_EFTM_1.raw$Disease <- "AD"
+GEX_BU_EFTM_1.raw$Model <- "5XFAD"
+
+GEX_BU_EFTM_1.filtered$MitoPercent <- PercentageFeatureSet(GEX_BU_EFTM_1.filtered, pattern = "^mt-")
+GEX_BU_EFTM_1.filtered$Condition <- "Control"
+GEX_BU_EFTM_1.filtered$Genotype <- "5XFAD/TREM2-WT"
+GEX_BU_EFTM_1.filtered$StudyID <- "GSE161224"
+GEX_BU_EFTM_1.filtered$Sample <- "SRR13021300"
+GEX_BU_EFTM_1.filtered$Gender <- "Mixed"
+GEX_BU_EFTM_1.filtered$BrainRegion <- "Cortex"
+GEX_BU_EFTM_1.filtered$StudyName <- "Zhao 5XFAD"
+GEX_BU_EFTM_1.filtered$data.type <- "Single Cell"
+GEX_BU_EFTM_1.filtered$Age <- "3.5m"
+GEX_BU_EFTM_1.filtered$Disease <- "AD"
+GEX_BU_EFTM_1.filtered$Model <- "5XFAD"
+
+```
+
+
+### GEX_BU_EFTM_5
+```{r}
+# load data from the original and filtered h5 file
+GEX_BU_EFTM_5.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161224/GEX_BU_EFTM_5.h5", use.names = TRUE)
+GEX_BU_EFTM_5.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161224/GEX_BU_EFTM_5_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+GEX_BU_EFTM_5.raw <- CreateSeuratObject(counts = GEX_BU_EFTM_5.raw)
+GEX_BU_EFTM_5.filtered <- CreateSeuratObject(counts = GEX_BU_EFTM_5.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(GEX_BU_EFTM_5.filtered)
+GEX_BU_EFTM_5.raw <- GEX_BU_EFTM_5.raw[,colnames(GEX_BU_EFTM_5.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(GEX_BU_EFTM_5.raw),feat$symbol)
+features <- feat[x,]
+
+GEX_BU_EFTM_5.raw$MitoPercent <- PercentageFeatureSet(GEX_BU_EFTM_5.raw, pattern = "^mt-")
+GEX_BU_EFTM_5.raw$Condition <- "Control"
+GEX_BU_EFTM_5.raw$Genotype <- "5XFAD/TREM2-WT"
+GEX_BU_EFTM_5.raw$StudyID <- "GSE161224"
+GEX_BU_EFTM_5.raw$Sample <- "SRR13021301"
+GEX_BU_EFTM_5.raw$Gender <- "Mixed"
+GEX_BU_EFTM_5.raw$BrainRegion <- "Cortex"
+GEX_BU_EFTM_5.raw$StudyName <- "Zhao 5XFAD"
+GEX_BU_EFTM_5.raw$data.type <- "Single Cell"
+GEX_BU_EFTM_5.raw$Age <- "3.5m"
+GEX_BU_EFTM_5.raw$Disease <- "AD"
+GEX_BU_EFTM_5.raw$Model <- "5XFAD"
+
+GEX_BU_EFTM_5.filtered$MitoPercent <- PercentageFeatureSet(GEX_BU_EFTM_5.filtered, pattern = "^mt-")
+GEX_BU_EFTM_5.filtered$Condition <- "Control"
+GEX_BU_EFTM_5.filtered$Genotype <- "5XFAD/TREM2-WT"
+GEX_BU_EFTM_5.filtered$StudyID <- "GSE161224"
+GEX_BU_EFTM_5.filtered$Sample <- "SRR13021301"
+GEX_BU_EFTM_5.filtered$Gender <- "Mixed"
+GEX_BU_EFTM_5.filtered$BrainRegion <- "Cortex"
+GEX_BU_EFTM_5.filtered$StudyName <- "Zhao 5XFAD"
+GEX_BU_EFTM_5.filtered$data.type <- "Single Cell"
+GEX_BU_EFTM_5.filtered$Age <- "3.5m"
+GEX_BU_EFTM_5.filtered$Disease <- "AD"
+GEX_BU_EFTM_5.filtered$Model <- "5XFAD"
+
+```
+
+### GEX_BU_EFTM_9
+```{r}
+# load data from the original and filtered h5 file
+GEX_BU_EFTM_9.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161224/GEX_BU_EFTM_9.h5", use.names = TRUE)
+GEX_BU_EFTM_9.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161224/GEX_BU_EFTM_9_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+GEX_BU_EFTM_9.raw <- CreateSeuratObject(counts = GEX_BU_EFTM_9.raw)
+GEX_BU_EFTM_9.filtered <- CreateSeuratObject(counts = GEX_BU_EFTM_9.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(GEX_BU_EFTM_9.filtered)
+GEX_BU_EFTM_9.raw <- GEX_BU_EFTM_9.raw[,colnames(GEX_BU_EFTM_9.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(GEX_BU_EFTM_9.raw),feat$symbol)
+features <- feat[x,]
+
+GEX_BU_EFTM_9.raw$MitoPercent <- PercentageFeatureSet(GEX_BU_EFTM_9.raw, pattern = "^mt-")
+GEX_BU_EFTM_9.raw$Condition <- "Control"
+GEX_BU_EFTM_9.raw$Genotype <- "5XFAD/TREM2-WT"
+GEX_BU_EFTM_9.raw$StudyID <- "GSE161224"
+GEX_BU_EFTM_9.raw$Sample <- "SRR13021302"
+GEX_BU_EFTM_9.raw$Gender <- "Mixed"
+GEX_BU_EFTM_9.raw$BrainRegion <- "Cortex"
+GEX_BU_EFTM_9.raw$StudyName <- "Zhao 5XFAD"
+GEX_BU_EFTM_9.raw$data.type <- "Single Cell"
+GEX_BU_EFTM_9.raw$Age <- "3.5m"
+GEX_BU_EFTM_9.raw$Disease <- "AD"
+GEX_BU_EFTM_9.raw$Model <- "5XFAD"
+
+GEX_BU_EFTM_9.filtered$MitoPercent <- PercentageFeatureSet(GEX_BU_EFTM_9.filtered, pattern = "^mt-")
+GEX_BU_EFTM_9.filtered$Condition <- "Control"
+GEX_BU_EFTM_9.filtered$Genotype <- "5XFAD/TREM2-WT"
+GEX_BU_EFTM_9.filtered$StudyID <- "GSE161224"
+GEX_BU_EFTM_9.filtered$Sample <- "SRR13021302"
+GEX_BU_EFTM_9.filtered$Gender <- "Mixed"
+GEX_BU_EFTM_9.filtered$BrainRegion <- "Cortex"
+GEX_BU_EFTM_9.filtered$StudyName <- "Zhao 5XFAD"
+GEX_BU_EFTM_9.filtered$data.type <- "Single Cell"
+GEX_BU_EFTM_9.filtered$Age <- "3.5m"
+GEX_BU_EFTM_9.filtered$Disease <- "AD"
+GEX_BU_EFTM_9.filtered$Model <- "5XFAD"
+
+```
+### GEX_BU_EFTM_13
+```{r}
+# load data from the original and filtered h5 file
+GEX_BU_EFTM_13.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161224/GEX_BU_EFTM_13.h5", use.names = TRUE)
+GEX_BU_EFTM_13.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161224/GEX_BU_EFTM_13_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+GEX_BU_EFTM_13.raw <- CreateSeuratObject(counts = GEX_BU_EFTM_13.raw)
+GEX_BU_EFTM_13.filtered <- CreateSeuratObject(counts = GEX_BU_EFTM_13.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(GEX_BU_EFTM_13.filtered)
+GEX_BU_EFTM_13.raw <- GEX_BU_EFTM_13.raw[,colnames(GEX_BU_EFTM_13.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(GEX_BU_EFTM_13.raw),feat$symbol)
+features <- feat[x,]
+
+GEX_BU_EFTM_13.raw$MitoPercent <- PercentageFeatureSet(GEX_BU_EFTM_13.raw, pattern = "^mt-")
+GEX_BU_EFTM_13.raw$Condition <- "Control"
+GEX_BU_EFTM_13.raw$Genotype <- "5XFAD/TREM2-WT"
+GEX_BU_EFTM_13.raw$StudyID <- "GSE161224"
+GEX_BU_EFTM_13.raw$Sample <- "SRR13021303"
+GEX_BU_EFTM_13.raw$Gender <- "Mixed"
+GEX_BU_EFTM_13.raw$BrainRegion <- "Cortex"
+GEX_BU_EFTM_13.raw$StudyName <- "Zhao 5XFAD"
+GEX_BU_EFTM_13.raw$data.type <- "Single Cell"
+GEX_BU_EFTM_13.raw$Age <- "3.5m"
+GEX_BU_EFTM_13.raw$Disease <- "AD"
+GEX_BU_EFTM_13.raw$Model <- "5XFAD"
+
+GEX_BU_EFTM_13.filtered$MitoPercent <- PercentageFeatureSet(GEX_BU_EFTM_13.filtered, pattern = "^mt-")
+GEX_BU_EFTM_13.filtered$Condition <- "Control"
+GEX_BU_EFTM_13.filtered$Genotype <- "5XFAD/TREM2-WT"
+GEX_BU_EFTM_13.filtered$StudyID <- "GSE161224"
+GEX_BU_EFTM_13.filtered$Sample <- "SRR13021303"
+GEX_BU_EFTM_13.filtered$Gender <- "Mixed"
+GEX_BU_EFTM_13.filtered$BrainRegion <- "Cortex"
+GEX_BU_EFTM_13.filtered$StudyName <- "Zhao 5XFAD"
+GEX_BU_EFTM_13.filtered$data.type <- "Single Cell"
+GEX_BU_EFTM_13.filtered$Age <- "3.5m"
+GEX_BU_EFTM_13.filtered$Disease <- "AD"
+GEX_BU_EFTM_13.filtered$Model <- "5XFAD"
+
+```
+### GEX_BU_EFTM_17
+```{r}
+# load data from the original and filtered h5 file
+GEX_BU_EFTM_17.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161224/GEX_BU_EFTM_17.h5", use.names = TRUE)
+GEX_BU_EFTM_17.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161224/GEX_BU_EFTM_17_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+GEX_BU_EFTM_17.raw <- CreateSeuratObject(counts = GEX_BU_EFTM_17.raw)
+GEX_BU_EFTM_17.filtered <- CreateSeuratObject(counts = GEX_BU_EFTM_17.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(GEX_BU_EFTM_17.filtered)
+GEX_BU_EFTM_17.raw <- GEX_BU_EFTM_17.raw[,colnames(GEX_BU_EFTM_17.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(GEX_BU_EFTM_17.raw),feat$symbol)
+features <- feat[x,]
+
+GEX_BU_EFTM_17.raw$MitoPercent <- PercentageFeatureSet(GEX_BU_EFTM_17.raw, pattern = "^mt-")
+GEX_BU_EFTM_17.raw$Condition <- "Control"
+GEX_BU_EFTM_17.raw$Genotype <- "5XFAD/TREM2-WT"
+GEX_BU_EFTM_17.raw$StudyID <- "GSE161224"
+GEX_BU_EFTM_17.raw$Sample <- "SRR13021304"
+GEX_BU_EFTM_17.raw$Gender <- "Mixed"
+GEX_BU_EFTM_17.raw$BrainRegion <- "Cortex"
+GEX_BU_EFTM_17.raw$StudyName <- "Zhao 5XFAD"
+GEX_BU_EFTM_17.raw$data.type <- "Single Cell"
+GEX_BU_EFTM_17.raw$Age <- "3.5m"
+GEX_BU_EFTM_17.raw$Disease <- "AD"
+GEX_BU_EFTM_17.raw$Model <- "5XFAD"
+
+GEX_BU_EFTM_17.filtered$MitoPercent <- PercentageFeatureSet(GEX_BU_EFTM_17.filtered, pattern = "^mt-")
+GEX_BU_EFTM_17.filtered$Condition <- "Control"
+GEX_BU_EFTM_17.filtered$Genotype <- "5XFAD/TREM2-WT"
+GEX_BU_EFTM_17.filtered$StudyID <- "GSE161224"
+GEX_BU_EFTM_17.filtered$Sample <- "SRR13021304"
+GEX_BU_EFTM_17.filtered$Gender <- "Mixed"
+GEX_BU_EFTM_17.filtered$BrainRegion <- "Cortex"
+GEX_BU_EFTM_17.filtered$StudyName <- "Zhao 5XFAD"
+GEX_BU_EFTM_17.filtered$data.type <- "Single Cell"
+GEX_BU_EFTM_17.filtered$Age <- "3.5m"
+GEX_BU_EFTM_17.filtered$Disease <- "AD"
+GEX_BU_EFTM_17.filtered$Model <- "5XFAD"
+
+```
+
+### GEX_BU_EFTM_21
+```{r}
+# load data from the original and filtered h5 file
+GEX_BU_EFTM_21.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161224/GEX_BU_EFTM_21.h5", use.names = TRUE)
+GEX_BU_EFTM_21.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161224/GEX_BU_EFTM_21_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+GEX_BU_EFTM_21.raw <- CreateSeuratObject(counts = GEX_BU_EFTM_21.raw)
+GEX_BU_EFTM_21.filtered <- CreateSeuratObject(counts = GEX_BU_EFTM_21.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(GEX_BU_EFTM_21.filtered)
+GEX_BU_EFTM_21.raw <- GEX_BU_EFTM_21.raw[,colnames(GEX_BU_EFTM_21.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(GEX_BU_EFTM_21.raw),feat$symbol)
+features <- feat[x,]
+
+GEX_BU_EFTM_21.raw$MitoPercent <- PercentageFeatureSet(GEX_BU_EFTM_21.raw, pattern = "^mt-")
+GEX_BU_EFTM_21.raw$Condition <- "Control"
+GEX_BU_EFTM_21.raw$Genotype <- "5XFAD/TREM2-WT"
+GEX_BU_EFTM_21.raw$StudyID <- "GSE161224"
+GEX_BU_EFTM_21.raw$Sample <- "SRR13021305"
+GEX_BU_EFTM_21.raw$Gender <- "Mixed"
+GEX_BU_EFTM_21.raw$BrainRegion <- "Cortex"
+GEX_BU_EFTM_21.raw$StudyName <- "Zhao 5XFAD"
+GEX_BU_EFTM_21.raw$data.type <- "Single Cell"
+GEX_BU_EFTM_21.raw$Age <- "3.5m"
+GEX_BU_EFTM_21.raw$Disease <- "AD"
+GEX_BU_EFTM_21.raw$Model <- "5XFAD"
+
+GEX_BU_EFTM_21.filtered$MitoPercent <- PercentageFeatureSet(GEX_BU_EFTM_21.filtered, pattern = "^mt-")
+GEX_BU_EFTM_21.filtered$Condition <- "Control"
+GEX_BU_EFTM_21.filtered$Genotype <- "5XFAD/TREM2-WT"
+GEX_BU_EFTM_21.filtered$StudyID <- "GSE161224"
+GEX_BU_EFTM_21.filtered$Sample <- "SRR13021305"
+GEX_BU_EFTM_21.filtered$Gender <- "Mixed"
+GEX_BU_EFTM_21.filtered$BrainRegion <- "Cortex"
+GEX_BU_EFTM_21.filtered$StudyName <- "Zhao 5XFAD"
+GEX_BU_EFTM_21.filtered$data.type <- "Single Cell"
+GEX_BU_EFTM_21.filtered$Age <- "3.5m"
+GEX_BU_EFTM_21.filtered$Disease <- "AD"
+GEX_BU_EFTM_21.filtered$Model <- "5XFAD"
+
+```
+
+## TREM2-R47H-Control
+
+### GEX_BU_EFTM_3
+```{r}
+# load data from the original and filtered h5 file
+GEX_BU_EFTM_3.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161224/GEX_BU_EFTM_3.h5", use.names = TRUE)
+GEX_BU_EFTM_3.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161224/GEX_BU_EFTM_3_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+GEX_BU_EFTM_3.raw <- CreateSeuratObject(counts = GEX_BU_EFTM_3.raw)
+GEX_BU_EFTM_3.filtered <- CreateSeuratObject(counts = GEX_BU_EFTM_3.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(GEX_BU_EFTM_3.filtered)
+GEX_BU_EFTM_3.raw <- GEX_BU_EFTM_3.raw[,colnames(GEX_BU_EFTM_3.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(GEX_BU_EFTM_3.raw),feat$symbol)
+features <- feat[x,]
+
+GEX_BU_EFTM_3.raw$MitoPercent <- PercentageFeatureSet(GEX_BU_EFTM_3.raw, pattern = "^mt-")
+GEX_BU_EFTM_3.raw$Condition <- "Control"
+GEX_BU_EFTM_3.raw$Genotype <- "5XFAD/TREM2-R47H"
+GEX_BU_EFTM_3.raw$StudyID <- "GSE161224"
+GEX_BU_EFTM_3.raw$Sample <- "SRR13021312"
+GEX_BU_EFTM_3.raw$Gender <- "Mixed"
+GEX_BU_EFTM_3.raw$BrainRegion <- "Cortex"
+GEX_BU_EFTM_3.raw$StudyName <- "Zhao 5XFAD"
+GEX_BU_EFTM_3.raw$data.type <- "Single Cell"
+GEX_BU_EFTM_3.raw$Age <- "3.5m"
+GEX_BU_EFTM_3.raw$Disease <- "AD"
+GEX_BU_EFTM_3.raw$Model <- "5XFAD"
+
+GEX_BU_EFTM_3.filtered$MitoPercent <- PercentageFeatureSet(GEX_BU_EFTM_3.filtered, pattern = "^mt-")
+GEX_BU_EFTM_3.filtered$Condition <- "Control"
+GEX_BU_EFTM_3.filtered$Genotype <- "5XFAD/TREM2-R47H"
+GEX_BU_EFTM_3.filtered$StudyID <- "GSE161224"
+GEX_BU_EFTM_3.filtered$Sample <- "SRR13021312"
+GEX_BU_EFTM_3.filtered$Gender <- "Mixed"
+GEX_BU_EFTM_3.filtered$BrainRegion <- "Cortex"
+GEX_BU_EFTM_3.filtered$StudyName <- "Zhao 5XFAD"
+GEX_BU_EFTM_3.filtered$data.type <- "Single Cell"
+GEX_BU_EFTM_3.filtered$Age <- "3.5m"
+GEX_BU_EFTM_3.filtered$Disease <- "AD"
+GEX_BU_EFTM_3.filtered$Model <- "5XFAD"
+
+```
+
+
+### GEX_BU_EFTM_7
+```{r}
+# load data from the original and filtered h5 file
+GEX_BU_EFTM_7.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161224/GEX_BU_EFTM_7.h5", use.names = TRUE)
+GEX_BU_EFTM_7.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161224/GEX_BU_EFTM_7_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+GEX_BU_EFTM_7.raw <- CreateSeuratObject(counts = GEX_BU_EFTM_7.raw)
+GEX_BU_EFTM_7.filtered <- CreateSeuratObject(counts = GEX_BU_EFTM_7.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(GEX_BU_EFTM_7.filtered)
+GEX_BU_EFTM_7.raw <- GEX_BU_EFTM_7.raw[,colnames(GEX_BU_EFTM_7.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(GEX_BU_EFTM_7.raw),feat$symbol)
+features <- feat[x,]
+
+GEX_BU_EFTM_7.raw$MitoPercent <- PercentageFeatureSet(GEX_BU_EFTM_7.raw, pattern = "^mt-")
+GEX_BU_EFTM_7.raw$Condition <- "Control"
+GEX_BU_EFTM_7.raw$Genotype <- "5XFAD/TREM2-R47H"
+GEX_BU_EFTM_7.raw$StudyID <- "GSE161224"
+GEX_BU_EFTM_7.raw$Sample <- "SRR13021313"
+GEX_BU_EFTM_7.raw$Gender <- "Mixed"
+GEX_BU_EFTM_7.raw$BrainRegion <- "Cortex"
+GEX_BU_EFTM_7.raw$StudyName <- "Zhao 5XFAD"
+GEX_BU_EFTM_7.raw$data.type <- "Single Cell"
+GEX_BU_EFTM_7.raw$Age <- "3.5m"
+GEX_BU_EFTM_7.raw$Disease <- "AD"
+GEX_BU_EFTM_7.raw$Model <- "5XFAD"
+
+GEX_BU_EFTM_7.filtered$MitoPercent <- PercentageFeatureSet(GEX_BU_EFTM_7.filtered, pattern = "^mt-")
+GEX_BU_EFTM_7.filtered$Condition <- "Control"
+GEX_BU_EFTM_7.filtered$Genotype <- "5XFAD/TREM2-R47H"
+GEX_BU_EFTM_7.filtered$StudyID <- "GSE161224"
+GEX_BU_EFTM_7.filtered$Sample <- "SRR13021313"
+GEX_BU_EFTM_7.filtered$Gender <- "Mixed"
+GEX_BU_EFTM_7.filtered$BrainRegion <- "Cortex"
+GEX_BU_EFTM_7.filtered$StudyName <- "Zhao 5XFAD"
+GEX_BU_EFTM_7.filtered$data.type <- "Single Cell"
+GEX_BU_EFTM_7.filtered$Age <- "3.5m"
+GEX_BU_EFTM_7.filtered$Disease <- "AD"
+GEX_BU_EFTM_7.filtered$Model <- "5XFAD"
+
+```
+
+### GEX_BU_EFTM_11
+```{r}
+# load data from the original and filtered h5 file
+GEX_BU_EFTM_11.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161224/GEX_BU_EFTM_11.h5", use.names = TRUE)
+GEX_BU_EFTM_11.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161224/GEX_BU_EFTM_11_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+GEX_BU_EFTM_11.raw <- CreateSeuratObject(counts = GEX_BU_EFTM_11.raw)
+GEX_BU_EFTM_11.filtered <- CreateSeuratObject(counts = GEX_BU_EFTM_11.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(GEX_BU_EFTM_11.filtered)
+GEX_BU_EFTM_11.raw <- GEX_BU_EFTM_11.raw[,colnames(GEX_BU_EFTM_11.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(GEX_BU_EFTM_11.raw),feat$symbol)
+features <- feat[x,]
+
+GEX_BU_EFTM_11.raw$MitoPercent <- PercentageFeatureSet(GEX_BU_EFTM_11.raw, pattern = "^mt-")
+GEX_BU_EFTM_11.raw$Condition <- "Control"
+GEX_BU_EFTM_11.raw$Genotype <- "5XFAD/TREM2-R47H"
+GEX_BU_EFTM_11.raw$StudyID <- "GSE161224"
+GEX_BU_EFTM_11.raw$Sample <- "SRR13021314"
+GEX_BU_EFTM_11.raw$Gender <- "Mixed"
+GEX_BU_EFTM_11.raw$BrainRegion <- "Cortex"
+GEX_BU_EFTM_11.raw$StudyName <- "Zhao 5XFAD"
+GEX_BU_EFTM_11.raw$data.type <- "Single Cell"
+GEX_BU_EFTM_11.raw$Age <- "3.5m"
+GEX_BU_EFTM_11.raw$Disease <- "AD"
+GEX_BU_EFTM_11.raw$Model <- "5XFAD"
+
+GEX_BU_EFTM_11.filtered$MitoPercent <- PercentageFeatureSet(GEX_BU_EFTM_11.filtered, pattern = "^mt-")
+GEX_BU_EFTM_11.filtered$Condition <- "Control"
+GEX_BU_EFTM_11.filtered$Genotype <- "5XFAD/TREM2-R47H"
+GEX_BU_EFTM_11.filtered$StudyID <- "GSE161224"
+GEX_BU_EFTM_11.filtered$Sample <- "SRR13021314"
+GEX_BU_EFTM_11.filtered$Gender <- "Mixed"
+GEX_BU_EFTM_11.filtered$BrainRegion <- "Cortex"
+GEX_BU_EFTM_11.filtered$StudyName <- "Zhao 5XFAD"
+GEX_BU_EFTM_11.filtered$data.type <- "Single Cell"
+GEX_BU_EFTM_11.filtered$Age <- "3.5m"
+GEX_BU_EFTM_11.filtered$Disease <- "AD"
+GEX_BU_EFTM_11.filtered$Model <- "5XFAD"
+
+```
+
+
+
+### GEX_BU_EFTM_15
+```{r}
+# load data from the original and filtered h5 file
+GEX_BU_EFTM_15.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161224/GEX_BU_EFTM_15.h5", use.names = TRUE)
+GEX_BU_EFTM_15.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161224/GEX_BU_EFTM_15_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+GEX_BU_EFTM_15.raw <- CreateSeuratObject(counts = GEX_BU_EFTM_15.raw)
+GEX_BU_EFTM_15.filtered <- CreateSeuratObject(counts = GEX_BU_EFTM_15.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(GEX_BU_EFTM_15.filtered)
+GEX_BU_EFTM_15.raw <- GEX_BU_EFTM_15.raw[,colnames(GEX_BU_EFTM_15.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(GEX_BU_EFTM_15.raw),feat$symbol)
+features <- feat[x,]
+
+GEX_BU_EFTM_15.raw$MitoPercent <- PercentageFeatureSet(GEX_BU_EFTM_15.raw, pattern = "^mt-")
+GEX_BU_EFTM_15.raw$Condition <- "Control"
+GEX_BU_EFTM_15.raw$Genotype <- "5XFAD/TREM2-R47H"
+GEX_BU_EFTM_15.raw$StudyID <- "GSE161224"
+GEX_BU_EFTM_15.raw$Sample <- "SRR13021315"
+GEX_BU_EFTM_15.raw$Gender <- "Mixed"
+GEX_BU_EFTM_15.raw$BrainRegion <- "Cortex"
+GEX_BU_EFTM_15.raw$StudyName <- "Zhao 5XFAD"
+GEX_BU_EFTM_15.raw$data.type <- "Single Cell"
+GEX_BU_EFTM_15.raw$Age <- "3.5m"
+GEX_BU_EFTM_15.raw$Disease <- "AD"
+GEX_BU_EFTM_15.raw$Model <- "5XFAD"
+
+GEX_BU_EFTM_15.filtered$MitoPercent <- PercentageFeatureSet(GEX_BU_EFTM_15.filtered, pattern = "^mt-")
+GEX_BU_EFTM_15.filtered$Condition <- "Control"
+GEX_BU_EFTM_15.filtered$Genotype <- "5XFAD/TREM2-R47H"
+GEX_BU_EFTM_15.filtered$StudyID <- "GSE161224"
+GEX_BU_EFTM_15.filtered$Sample <- "SRR13021315"
+GEX_BU_EFTM_15.filtered$Gender <- "Mixed"
+GEX_BU_EFTM_15.filtered$BrainRegion <- "Cortex"
+GEX_BU_EFTM_15.filtered$StudyName <- "Zhao 5XFAD"
+GEX_BU_EFTM_15.filtered$data.type <- "Single Cell"
+GEX_BU_EFTM_15.filtered$Age <- "3.5m"
+GEX_BU_EFTM_15.filtered$Disease <- "AD"
+GEX_BU_EFTM_15.filtered$Model <- "5XFAD"
+
+```
+
+
+
+### GEX_BU_EFTM_19
+```{r}
+# load data from the original and filtered h5 file
+GEX_BU_EFTM_19.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161224/GEX_BU_EFTM_19.h5", use.names = TRUE)
+GEX_BU_EFTM_19.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161224/GEX_BU_EFTM_19_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+GEX_BU_EFTM_19.raw <- CreateSeuratObject(counts = GEX_BU_EFTM_19.raw)
+GEX_BU_EFTM_19.filtered <- CreateSeuratObject(counts = GEX_BU_EFTM_19.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(GEX_BU_EFTM_19.filtered)
+GEX_BU_EFTM_19.raw <- GEX_BU_EFTM_19.raw[,colnames(GEX_BU_EFTM_19.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(GEX_BU_EFTM_19.raw),feat$symbol)
+features <- feat[x,]
+
+GEX_BU_EFTM_19.raw$MitoPercent <- PercentageFeatureSet(GEX_BU_EFTM_19.raw, pattern = "^mt-")
+GEX_BU_EFTM_19.raw$Condition <- "Control"
+GEX_BU_EFTM_19.raw$Genotype <- "5XFAD/TREM2-R47H"
+GEX_BU_EFTM_19.raw$StudyID <- "GSE161224"
+GEX_BU_EFTM_19.raw$Sample <- "SRR13021316"
+GEX_BU_EFTM_19.raw$Gender <- "Mixed"
+GEX_BU_EFTM_19.raw$BrainRegion <- "Cortex"
+GEX_BU_EFTM_19.raw$StudyName <- "Zhao 5XFAD"
+GEX_BU_EFTM_19.raw$data.type <- "Single Cell"
+GEX_BU_EFTM_19.raw$Age <- "3.5m"
+GEX_BU_EFTM_19.raw$Disease <- "AD"
+GEX_BU_EFTM_19.raw$Model <- "5XFAD"
+
+GEX_BU_EFTM_19.filtered$MitoPercent <- PercentageFeatureSet(GEX_BU_EFTM_19.filtered, pattern = "^mt-")
+GEX_BU_EFTM_19.filtered$Condition <- "Control"
+GEX_BU_EFTM_19.filtered$Genotype <- "5XFAD/TREM2-R47H"
+GEX_BU_EFTM_19.filtered$StudyID <- "GSE161224"
+GEX_BU_EFTM_19.filtered$Sample <- "SRR13021316"
+GEX_BU_EFTM_19.filtered$Gender <- "Mixed"
+GEX_BU_EFTM_19.filtered$BrainRegion <- "Cortex"
+GEX_BU_EFTM_19.filtered$StudyName <- "Zhao 5XFAD"
+GEX_BU_EFTM_19.filtered$data.type <- "Single Cell"
+GEX_BU_EFTM_19.filtered$Age <- "3.5m"
+GEX_BU_EFTM_19.filtered$Disease <- "AD"
+GEX_BU_EFTM_19.filtered$Model <- "5XFAD"
+
+```
+
+### GEX_BU_EFTM_23
+```{r}
+# load data from the original and filtered h5 file
+GEX_BU_EFTM_23.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161224/GEX_BU_EFTM_23.h5", use.names = TRUE)
+GEX_BU_EFTM_23.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161224/GEX_BU_EFTM_23_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+GEX_BU_EFTM_23.raw <- CreateSeuratObject(counts = GEX_BU_EFTM_23.raw)
+GEX_BU_EFTM_23.filtered <- CreateSeuratObject(counts = GEX_BU_EFTM_23.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(GEX_BU_EFTM_23.filtered)
+GEX_BU_EFTM_23.raw <- GEX_BU_EFTM_23.raw[,colnames(GEX_BU_EFTM_23.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(GEX_BU_EFTM_23.raw),feat$symbol)
+features <- feat[x,]
+
+GEX_BU_EFTM_23.raw$MitoPercent <- PercentageFeatureSet(GEX_BU_EFTM_23.raw, pattern = "^mt-")
+GEX_BU_EFTM_23.raw$Condition <- "Control"
+GEX_BU_EFTM_23.raw$Genotype <- "5XFAD/TREM2-R47H"
+GEX_BU_EFTM_23.raw$StudyID <- "GSE161224"
+GEX_BU_EFTM_23.raw$Sample <- "SRR13021317"
+GEX_BU_EFTM_23.raw$Gender <- "Mixed"
+GEX_BU_EFTM_23.raw$BrainRegion <- "Cortex"
+GEX_BU_EFTM_23.raw$StudyName <- "Zhao 5XFAD"
+GEX_BU_EFTM_23.raw$data.type <- "Single Cell"
+GEX_BU_EFTM_23.raw$Age <- "3.5m"
+GEX_BU_EFTM_23.raw$Disease <- "AD"
+GEX_BU_EFTM_23.raw$Model <- "5XFAD"
+
+GEX_BU_EFTM_23.filtered$MitoPercent <- PercentageFeatureSet(GEX_BU_EFTM_23.filtered, pattern = "^mt-")
+GEX_BU_EFTM_23.filtered$Condition <- "Control"
+GEX_BU_EFTM_23.filtered$Genotype <- "5XFAD/TREM2-R47H"
+GEX_BU_EFTM_23.filtered$StudyID <- "GSE161224"
+GEX_BU_EFTM_23.filtered$Sample <- "SRR13021317"
+GEX_BU_EFTM_23.filtered$Gender <- "Mixed"
+GEX_BU_EFTM_23.filtered$BrainRegion <- "Cortex"
+GEX_BU_EFTM_23.filtered$StudyName <- "Zhao 5XFAD"
+GEX_BU_EFTM_23.filtered$data.type <- "Single Cell"
+GEX_BU_EFTM_23.filtered$Age <- "3.5m"
+GEX_BU_EFTM_23.filtered$Disease <- "AD"
+GEX_BU_EFTM_23.filtered$Model <- "5XFAD"
+
+```
+
+
+
+
+
+#GSE161227 - Zhao 5m
+## TREM2-WT Control 
+
+### BU_FTM_1
+```{r}
+# load data from the original and filtered h5 file
+BU_FTM_1.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161227/BU_FTM_1.h5", use.names = TRUE)
+BU_FTM_1.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161227/BU_FTM_1_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+BU_FTM_1.raw <- CreateSeuratObject(counts = BU_FTM_1.raw)
+BU_FTM_1.filtered <- CreateSeuratObject(counts = BU_FTM_1.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(BU_FTM_1.filtered)
+BU_FTM_1.raw <- BU_FTM_1.raw[,colnames(BU_FTM_1.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(BU_FTM_1.raw),feat$symbol)
+features <- feat[x,]
+
+BU_FTM_1.raw$MitoPercent <- PercentageFeatureSet(BU_FTM_1.raw, pattern = "^mt-")
+BU_FTM_1.raw$Condition <- "Control"
+BU_FTM_1.raw$Genotype <- "5XFAD/TREM2-WT"
+BU_FTM_1.raw$StudyID <- "GSE161227"
+BU_FTM_1.raw$Sample <- "SRR13021330"
+BU_FTM_1.raw$Gender <- "Mixed"
+BU_FTM_1.raw$BrainRegion <- "Cortex"
+BU_FTM_1.raw$StudyName <- "Zhao 5XFAD"
+BU_FTM_1.raw$data.type <- "Single Cell"
+BU_FTM_1.raw$Age <- "5m"
+BU_FTM_1.raw$Disease <- "AD"
+BU_FTM_1.raw$Model <- "5XFAD"
+
+BU_FTM_1.filtered$MitoPercent <- PercentageFeatureSet(BU_FTM_1.filtered, pattern = "^mt-")
+BU_FTM_1.filtered$Condition <- "Control"
+BU_FTM_1.filtered$Genotype <- "5XFAD/TREM2-WT"
+BU_FTM_1.filtered$StudyID <- "GSE161227"
+BU_FTM_1.filtered$Sample <- "SRR13021330"
+BU_FTM_1.filtered$Gender <- "Mixed"
+BU_FTM_1.filtered$BrainRegion <- "Cortex"
+BU_FTM_1.filtered$StudyName <- "Zhao 5XFAD"
+BU_FTM_1.filtered$data.type <- "Single Cell"
+BU_FTM_1.filtered$Age <- "5m"
+BU_FTM_1.filtered$Disease <- "AD"
+BU_FTM_1.filtered$Model <- "5XFAD"
+
+```
+
+
+### BU_FTM_5
+```{r}
+# load data from the original and filtered h5 file
+BU_FTM_5.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161227/BU_FTM_5.h5", use.names = TRUE)
+BU_FTM_5.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161227/BU_FTM_5_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+BU_FTM_5.raw <- CreateSeuratObject(counts = BU_FTM_5.raw)
+BU_FTM_5.filtered <- CreateSeuratObject(counts = BU_FTM_5.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(BU_FTM_5.filtered)
+BU_FTM_5.raw <- BU_FTM_5.raw[,colnames(BU_FTM_5.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(BU_FTM_5.raw),feat$symbol)
+features <- feat[x,]
+
+BU_FTM_5.raw$MitoPercent <- PercentageFeatureSet(BU_FTM_5.raw, pattern = "^mt-")
+BU_FTM_5.raw$Condition <- "Control"
+BU_FTM_5.raw$Genotype <- "5XFAD/TREM2-WT"
+BU_FTM_5.raw$StudyID <- "GSE161227"
+BU_FTM_5.raw$Sample <- "SRR13021331"
+BU_FTM_5.raw$Gender <- "Mixed"
+BU_FTM_5.raw$BrainRegion <- "Cortex"
+BU_FTM_5.raw$StudyName <- "Zhao 5XFAD"
+BU_FTM_5.raw$data.type <- "Single Cell"
+BU_FTM_5.raw$Age <- "5m"
+BU_FTM_5.raw$Disease <- "AD"
+BU_FTM_5.raw$Model <- "5XFAD"
+
+BU_FTM_5.filtered$MitoPercent <- PercentageFeatureSet(BU_FTM_5.filtered, pattern = "^mt-")
+BU_FTM_5.filtered$Condition <- "Control"
+BU_FTM_5.filtered$Genotype <- "5XFAD/TREM2-WT"
+BU_FTM_5.filtered$StudyID <- "GSE161227"
+BU_FTM_5.filtered$Sample <- "SRR13021331"
+BU_FTM_5.filtered$Gender <- "Mixed"
+BU_FTM_5.filtered$BrainRegion <- "Cortex"
+BU_FTM_5.filtered$StudyName <- "Zhao 5XFAD"
+BU_FTM_5.filtered$data.type <- "Single Cell"
+BU_FTM_5.filtered$Age <- "5m"
+BU_FTM_5.filtered$Disease <- "AD"
+BU_FTM_5.filtered$Model <- "5XFAD"
+
+```
+
+### BU_FTM_9
+```{r}
+# load data from the original and filtered h5 file
+BU_FTM_9.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161227/BU_FTM_9.h5", use.names = TRUE)
+BU_FTM_9.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161227/BU_FTM_9_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+BU_FTM_9.raw <- CreateSeuratObject(counts = BU_FTM_9.raw)
+BU_FTM_9.filtered <- CreateSeuratObject(counts = BU_FTM_9.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(BU_FTM_9.filtered)
+BU_FTM_9.raw <- BU_FTM_9.raw[,colnames(BU_FTM_9.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(BU_FTM_9.raw),feat$symbol)
+features <- feat[x,]
+
+BU_FTM_9.raw$MitoPercent <- PercentageFeatureSet(BU_FTM_9.raw, pattern = "^mt-")
+BU_FTM_9.raw$Condition <- "Control"
+BU_FTM_9.raw$Genotype <- "5XFAD/TREM2-WT"
+BU_FTM_9.raw$StudyID <- "GSE161227"
+BU_FTM_9.raw$Sample <- "SRR13021332"
+BU_FTM_9.raw$Gender <- "Mixed"
+BU_FTM_9.raw$BrainRegion <- "Cortex"
+BU_FTM_9.raw$StudyName <- "Zhao 5XFAD"
+BU_FTM_9.raw$data.type <- "Single Cell"
+BU_FTM_9.raw$Age <- "5m"
+BU_FTM_9.raw$Disease <- "AD"
+BU_FTM_9.raw$Model <- "5XFAD"
+
+BU_FTM_9.filtered$MitoPercent <- PercentageFeatureSet(BU_FTM_9.filtered, pattern = "^mt-")
+BU_FTM_9.filtered$Condition <- "Control"
+BU_FTM_9.filtered$Genotype <- "5XFAD/TREM2-WT"
+BU_FTM_9.filtered$StudyID <- "GSE161227"
+BU_FTM_9.filtered$Sample <- "SRR13021332"
+BU_FTM_9.filtered$Gender <- "Mixed"
+BU_FTM_9.filtered$BrainRegion <- "Cortex"
+BU_FTM_9.filtered$StudyName <- "Zhao 5XFAD"
+BU_FTM_9.filtered$data.type <- "Single Cell"
+BU_FTM_9.filtered$Age <- "5m"
+BU_FTM_9.filtered$Disease <- "AD"
+BU_FTM_9.filtered$Model <- "5XFAD"
+
+```
+### BU_FTM_13
+```{r}
+# load data from the original and filtered h5 file
+BU_FTM_13.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161227/BU_FTM_13.h5", use.names = TRUE)
+BU_FTM_13.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161227/BU_FTM_13_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+BU_FTM_13.raw <- CreateSeuratObject(counts = BU_FTM_13.raw)
+BU_FTM_13.filtered <- CreateSeuratObject(counts = BU_FTM_13.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(BU_FTM_13.filtered)
+BU_FTM_13.raw <- BU_FTM_13.raw[,colnames(BU_FTM_13.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(BU_FTM_13.raw),feat$symbol)
+features <- feat[x,]
+
+BU_FTM_13.raw$MitoPercent <- PercentageFeatureSet(BU_FTM_13.raw, pattern = "^mt-")
+BU_FTM_13.raw$Condition <- "Control"
+BU_FTM_13.raw$Genotype <- "5XFAD/TREM2-WT"
+BU_FTM_13.raw$StudyID <- "GSE161227"
+BU_FTM_13.raw$Sample <- "SRR13021333"
+BU_FTM_13.raw$Gender <- "Mixed"
+BU_FTM_13.raw$BrainRegion <- "Cortex"
+BU_FTM_13.raw$StudyName <- "Zhao 5XFAD"
+BU_FTM_13.raw$data.type <- "Single Cell"
+BU_FTM_13.raw$Age <- "5m"
+BU_FTM_13.raw$Disease <- "AD"
+BU_FTM_13.raw$Model <- "5XFAD"
+
+BU_FTM_13.filtered$MitoPercent <- PercentageFeatureSet(BU_FTM_13.filtered, pattern = "^mt-")
+BU_FTM_13.filtered$Condition <- "Control"
+BU_FTM_13.filtered$Genotype <- "5XFAD/TREM2-WT"
+BU_FTM_13.filtered$StudyID <- "GSE161227"
+BU_FTM_13.filtered$Sample <- "SRR13021333"
+BU_FTM_13.filtered$Gender <- "Mixed"
+BU_FTM_13.filtered$BrainRegion <- "Cortex"
+BU_FTM_13.filtered$StudyName <- "Zhao 5XFAD"
+BU_FTM_13.filtered$data.type <- "Single Cell"
+BU_FTM_13.filtered$Age <- "5m"
+BU_FTM_13.filtered$Disease <- "AD"
+BU_FTM_13.filtered$Model <- "5XFAD"
+
+```
+### BU_FTM_17
+```{r}
+# load data from the original and filtered h5 file
+BU_FTM_17.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161227/BU_FTM_17.h5", use.names = TRUE)
+BU_FTM_17.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161227/BU_FTM_17_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+BU_FTM_17.raw <- CreateSeuratObject(counts = BU_FTM_17.raw)
+BU_FTM_17.filtered <- CreateSeuratObject(counts = BU_FTM_17.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(BU_FTM_17.filtered)
+BU_FTM_17.raw <- BU_FTM_17.raw[,colnames(BU_FTM_17.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(BU_FTM_17.raw),feat$symbol)
+features <- feat[x,]
+
+BU_FTM_17.raw$MitoPercent <- PercentageFeatureSet(BU_FTM_17.raw, pattern = "^mt-")
+BU_FTM_17.raw$Condition <- "Control"
+BU_FTM_17.raw$Genotype <- "5XFAD/TREM2-WT"
+BU_FTM_17.raw$StudyID <- "GSE161227"
+BU_FTM_17.raw$Sample <- "SRR13021334"
+BU_FTM_17.raw$Gender <- "Mixed"
+BU_FTM_17.raw$BrainRegion <- "Cortex"
+BU_FTM_17.raw$StudyName <- "Zhao 5XFAD"
+BU_FTM_17.raw$data.type <- "Single Cell"
+BU_FTM_17.raw$Age <- "5m"
+BU_FTM_17.raw$Disease <- "AD"
+BU_FTM_17.raw$Model <- "5XFAD"
+
+BU_FTM_17.filtered$MitoPercent <- PercentageFeatureSet(BU_FTM_17.filtered, pattern = "^mt-")
+BU_FTM_17.filtered$Condition <- "Control"
+BU_FTM_17.filtered$Genotype <- "5XFAD/TREM2-WT"
+BU_FTM_17.filtered$StudyID <- "GSE161227"
+BU_FTM_17.filtered$Sample <- "SRR13021334"
+BU_FTM_17.filtered$Gender <- "Mixed"
+BU_FTM_17.filtered$BrainRegion <- "Cortex"
+BU_FTM_17.filtered$StudyName <- "Zhao 5XFAD"
+BU_FTM_17.filtered$data.type <- "Single Cell"
+BU_FTM_17.filtered$Age <- "5m"
+BU_FTM_17.filtered$Disease <- "AD"
+BU_FTM_17.filtered$Model <- "5XFAD"
+
+```
+
+### BU_FTM_21
+```{r}
+# load data from the original and filtered h5 file
+BU_FTM_21.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161227/BU_FTM_21.h5", use.names = TRUE)
+BU_FTM_21.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161227/BU_FTM_21_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+BU_FTM_21.raw <- CreateSeuratObject(counts = BU_FTM_21.raw)
+BU_FTM_21.filtered <- CreateSeuratObject(counts = BU_FTM_21.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(BU_FTM_21.filtered)
+BU_FTM_21.raw <- BU_FTM_21.raw[,colnames(BU_FTM_21.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(BU_FTM_21.raw),feat$symbol)
+features <- feat[x,]
+
+BU_FTM_21.raw$MitoPercent <- PercentageFeatureSet(BU_FTM_21.raw, pattern = "^mt-")
+BU_FTM_21.raw$Condition <- "Control"
+BU_FTM_21.raw$Genotype <- "5XFAD/TREM2-WT"
+BU_FTM_21.raw$StudyID <- "GSE161227"
+BU_FTM_21.raw$Sample <- "SRR13021335"
+BU_FTM_21.raw$Gender <- "Mixed"
+BU_FTM_21.raw$BrainRegion <- "Cortex"
+BU_FTM_21.raw$StudyName <- "Zhao 5XFAD"
+BU_FTM_21.raw$data.type <- "Single Cell"
+BU_FTM_21.raw$Age <- "5m"
+BU_FTM_21.raw$Disease <- "AD"
+BU_FTM_21.raw$Model <- "5XFAD"
+
+BU_FTM_21.filtered$MitoPercent <- PercentageFeatureSet(BU_FTM_21.filtered, pattern = "^mt-")
+BU_FTM_21.filtered$Condition <- "Control"
+BU_FTM_21.filtered$Genotype <- "5XFAD/TREM2-WT"
+BU_FTM_21.filtered$StudyID <- "GSE161227"
+BU_FTM_21.filtered$Sample <- "SRR13021335"
+BU_FTM_21.filtered$Gender <- "Mixed"
+BU_FTM_21.filtered$BrainRegion <- "Cortex"
+BU_FTM_21.filtered$StudyName <- "Zhao 5XFAD"
+BU_FTM_21.filtered$data.type <- "Single Cell"
+BU_FTM_21.filtered$Age <- "5m"
+BU_FTM_21.filtered$Disease <- "AD"
+BU_FTM_21.filtered$Model <- "5XFAD"
+
+```
+## TREM2-R47H-Control
+
+### BU_FTM_7
+```{r}
+# load data from the original and filtered h5 file
+BU_FTM_7.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161227/BU_FTM_7.h5", use.names = TRUE)
+BU_FTM_7.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161227/BU_FTM_7_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+BU_FTM_7.raw <- CreateSeuratObject(counts = BU_FTM_7.raw)
+BU_FTM_7.filtered <- CreateSeuratObject(counts = BU_FTM_7.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(BU_FTM_7.filtered)
+BU_FTM_7.raw <- BU_FTM_7.raw[,colnames(BU_FTM_7.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(BU_FTM_7.raw),feat$symbol)
+features <- feat[x,]
+
+BU_FTM_7.raw$MitoPercent <- PercentageFeatureSet(BU_FTM_7.raw, pattern = "^mt-")
+BU_FTM_7.raw$Condition <- "Control"
+BU_FTM_7.raw$Genotype <- "5XFAD/TREM2-R47H"
+BU_FTM_7.raw$StudyID <- "GSE161227"
+BU_FTM_7.raw$Sample <- "SRR13021343"
+BU_FTM_7.raw$Gender <- "Mixed"
+BU_FTM_7.raw$BrainRegion <- "Cortex"
+BU_FTM_7.raw$StudyName <- "Zhao 5XFAD"
+BU_FTM_7.raw$data.type <- "Single Cell"
+BU_FTM_7.raw$Age <- "5m"
+BU_FTM_7.raw$Disease <- "AD"
+BU_FTM_7.raw$Model <- "5XFAD"
+
+BU_FTM_7.filtered$MitoPercent <- PercentageFeatureSet(BU_FTM_7.filtered, pattern = "^mt-")
+BU_FTM_7.filtered$Condition <- "Control"
+BU_FTM_7.filtered$Genotype <- "5XFAD/TREM2-R47H"
+BU_FTM_7.filtered$StudyID <- "GSE161227"
+BU_FTM_7.filtered$Sample <- "SRR13021343"
+BU_FTM_7.filtered$Gender <- "Mixed"
+BU_FTM_7.filtered$BrainRegion <- "Cortex"
+BU_FTM_7.filtered$StudyName <- "Zhao 5XFAD"
+BU_FTM_7.filtered$data.type <- "Single Cell"
+BU_FTM_7.filtered$Age <- "5m"
+BU_FTM_7.filtered$Disease <- "AD"
+BU_FTM_7.filtered$Model <- "5XFAD"
+
+```
+
+### BU_FTM_11
+```{r}
+# load data from the original and filtered h5 file
+BU_FTM_11.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161227/BU_FTM_11.h5", use.names = TRUE)
+BU_FTM_11.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161227/BU_FTM_11_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+BU_FTM_11.raw <- CreateSeuratObject(counts = BU_FTM_11.raw)
+BU_FTM_11.filtered <- CreateSeuratObject(counts = BU_FTM_11.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(BU_FTM_11.filtered)
+BU_FTM_11.raw <- BU_FTM_11.raw[,colnames(BU_FTM_11.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(BU_FTM_11.raw),feat$symbol)
+features <- feat[x,]
+
+BU_FTM_11.raw$MitoPercent <- PercentageFeatureSet(BU_FTM_11.raw, pattern = "^mt-")
+BU_FTM_11.raw$Condition <- "Control"
+BU_FTM_11.raw$Genotype <- "5XFAD/TREM2-R47H"
+BU_FTM_11.raw$StudyID <- "GSE161227"
+BU_FTM_11.raw$Sample <- "SRR13021344"
+BU_FTM_11.raw$Gender <- "Mixed"
+BU_FTM_11.raw$BrainRegion <- "Cortex"
+BU_FTM_11.raw$StudyName <- "Zhao 5XFAD"
+BU_FTM_11.raw$data.type <- "Single Cell"
+BU_FTM_11.raw$Age <- "5m"
+BU_FTM_11.raw$Disease <- "AD"
+BU_FTM_11.raw$Model <- "5XFAD"
+
+BU_FTM_11.filtered$MitoPercent <- PercentageFeatureSet(BU_FTM_11.filtered, pattern = "^mt-")
+BU_FTM_11.filtered$Condition <- "Control"
+BU_FTM_11.filtered$Genotype <- "5XFAD/TREM2-R47H"
+BU_FTM_11.filtered$StudyID <- "GSE161227"
+BU_FTM_11.filtered$Sample <- "SRR13021344"
+BU_FTM_11.filtered$Gender <- "Mixed"
+BU_FTM_11.filtered$BrainRegion <- "Cortex"
+BU_FTM_11.filtered$StudyName <- "Zhao 5XFAD"
+BU_FTM_11.filtered$data.type <- "Single Cell"
+BU_FTM_11.filtered$Age <- "5m"
+BU_FTM_11.filtered$Disease <- "AD"
+BU_FTM_11.filtered$Model <- "5XFAD"
+
+```
+
+
+
+### BU_FTM_15
+```{r}
+# load data from the original and filtered h5 file
+BU_FTM_15.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161227/BU_FTM_15.h5", use.names = TRUE)
+BU_FTM_15.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161227/BU_FTM_15_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+BU_FTM_15.raw <- CreateSeuratObject(counts = BU_FTM_15.raw)
+BU_FTM_15.filtered <- CreateSeuratObject(counts = BU_FTM_15.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(BU_FTM_15.filtered)
+BU_FTM_15.raw <- BU_FTM_15.raw[,colnames(BU_FTM_15.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(BU_FTM_15.raw),feat$symbol)
+features <- feat[x,]
+
+BU_FTM_15.raw$MitoPercent <- PercentageFeatureSet(BU_FTM_15.raw, pattern = "^mt-")
+BU_FTM_15.raw$Condition <- "Control"
+BU_FTM_15.raw$Genotype <- "5XFAD/TREM2-R47H"
+BU_FTM_15.raw$StudyID <- "GSE161227"
+BU_FTM_15.raw$Sample <- "SRR13021345"
+BU_FTM_15.raw$Gender <- "Mixed"
+BU_FTM_15.raw$BrainRegion <- "Cortex"
+BU_FTM_15.raw$StudyName <- "Zhao 5XFAD"
+BU_FTM_15.raw$data.type <- "Single Cell"
+BU_FTM_15.raw$Age <- "5m"
+BU_FTM_15.raw$Disease <- "AD"
+BU_FTM_15.raw$Model <- "5XFAD"
+
+BU_FTM_15.filtered$MitoPercent <- PercentageFeatureSet(BU_FTM_15.filtered, pattern = "^mt-")
+BU_FTM_15.filtered$Condition <- "Control"
+BU_FTM_15.filtered$Genotype <- "5XFAD/TREM2-R47H"
+BU_FTM_15.filtered$StudyID <- "GSE161227"
+BU_FTM_15.filtered$Sample <- "SRR13021345"
+BU_FTM_15.filtered$Gender <- "Mixed"
+BU_FTM_15.filtered$BrainRegion <- "Cortex"
+BU_FTM_15.filtered$StudyName <- "Zhao 5XFAD"
+BU_FTM_15.filtered$data.type <- "Single Cell"
+BU_FTM_15.filtered$Age <- "5m"
+BU_FTM_15.filtered$Disease <- "AD"
+BU_FTM_15.filtered$Model <- "5XFAD"
+
+```
+
+
+
+### BU_FTM_19
+```{r}
+# load data from the original and filtered h5 file
+BU_FTM_19.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161227/BU_FTM_19.h5", use.names = TRUE)
+BU_FTM_19.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161227/BU_FTM_19_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+BU_FTM_19.raw <- CreateSeuratObject(counts = BU_FTM_19.raw)
+BU_FTM_19.filtered <- CreateSeuratObject(counts = BU_FTM_19.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(BU_FTM_19.filtered)
+BU_FTM_19.raw <- BU_FTM_19.raw[,colnames(BU_FTM_19.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(BU_FTM_19.raw),feat$symbol)
+features <- feat[x,]
+
+BU_FTM_19.raw$MitoPercent <- PercentageFeatureSet(BU_FTM_19.raw, pattern = "^mt-")
+BU_FTM_19.raw$Condition <- "Control"
+BU_FTM_19.raw$Genotype <- "5XFAD/TREM2-R47H"
+BU_FTM_19.raw$StudyID <- "GSE161227"
+BU_FTM_19.raw$Sample <- "SRR13021346"
+BU_FTM_19.raw$Gender <- "Mixed"
+BU_FTM_19.raw$BrainRegion <- "Cortex"
+BU_FTM_19.raw$StudyName <- "Zhao 5XFAD"
+BU_FTM_19.raw$data.type <- "Single Cell"
+BU_FTM_19.raw$Age <- "5m"
+BU_FTM_19.raw$Disease <- "AD"
+BU_FTM_19.raw$Model <- "5XFAD"
+
+BU_FTM_19.filtered$MitoPercent <- PercentageFeatureSet(BU_FTM_19.filtered, pattern = "^mt-")
+BU_FTM_19.filtered$Condition <- "Control"
+BU_FTM_19.filtered$Genotype <- "5XFAD/TREM2-R47H"
+BU_FTM_19.filtered$StudyID <- "GSE161227"
+BU_FTM_19.filtered$Sample <- "SRR13021346"
+BU_FTM_19.filtered$Gender <- "Mixed"
+BU_FTM_19.filtered$BrainRegion <- "Cortex"
+BU_FTM_19.filtered$StudyName <- "Zhao 5XFAD"
+BU_FTM_19.filtered$data.type <- "Single Cell"
+BU_FTM_19.filtered$Age <- "5m"
+BU_FTM_19.filtered$Disease <- "AD"
+BU_FTM_19.filtered$Model <- "5XFAD"
+
+```
+
+### BU_FTM_23
+```{r}
+# load data from the original and filtered h5 file
+BU_FTM_23.raw <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161227/BU_FTM_23.h5", use.names = TRUE)
+BU_FTM_23.filtered <- Read10X_h5("/gstore/project/neurodegen_meta/data/cellbender/GSE161227/BU_FTM_23_filtered.h5", use.names = TRUE)
+
+#Create Seurat objects
+BU_FTM_23.raw <- CreateSeuratObject(counts = BU_FTM_23.raw)
+BU_FTM_23.filtered <- CreateSeuratObject(counts = BU_FTM_23.filtered)
+
+#lets only look at expression of the same barcoded cells
+barcodes <- colnames(BU_FTM_23.filtered)
+BU_FTM_23.raw <- BU_FTM_23.raw[,colnames(BU_FTM_23.raw) %in% barcodes]
+
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-2"))
+x <- match (rownames(BU_FTM_23.raw),feat$symbol)
+features <- feat[x,]
+
+BU_FTM_23.raw$MitoPercent <- PercentageFeatureSet(BU_FTM_23.raw, pattern = "^mt-")
+BU_FTM_23.raw$Condition <- "Control"
+BU_FTM_23.raw$Genotype <- "5XFAD/TREM2-R47H"
+BU_FTM_23.raw$StudyID <- "GSE161227"
+BU_FTM_23.raw$Sample <- "SRR13021347"
+BU_FTM_23.raw$Gender <- "Mixed"
+BU_FTM_23.raw$BrainRegion <- "Cortex"
+BU_FTM_23.raw$StudyName <- "Zhao 5XFAD"
+BU_FTM_23.raw$data.type <- "Single Cell"
+BU_FTM_23.raw$Age <- "5m"
+BU_FTM_23.raw$Disease <- "AD"
+BU_FTM_23.raw$Model <- "5XFAD"
+
+BU_FTM_23.filtered$MitoPercent <- PercentageFeatureSet(BU_FTM_23.filtered, pattern = "^mt-")
+BU_FTM_23.filtered$Condition <- "Control"
+BU_FTM_23.filtered$Genotype <- "5XFAD/TREM2-R47H"
+BU_FTM_23.filtered$StudyID <- "GSE161227"
+BU_FTM_23.filtered$Sample <- "SRR13021347"
+BU_FTM_23.filtered$Gender <- "Mixed"
+BU_FTM_23.filtered$BrainRegion <- "Cortex"
+BU_FTM_23.filtered$StudyName <- "Zhao 5XFAD"
+BU_FTM_23.filtered$data.type <- "Single Cell"
+BU_FTM_23.filtered$Age <- "5m"
+BU_FTM_23.filtered$Disease <- "AD"
+BU_FTM_23.filtered$Model <- "5XFAD"
+
+```
+
+# Merge Datasets
+
+```{r warning=FALSE}
+raw.data <- merge(x=GEX_BU_EFTM_1.raw,y=c(GEX_BU_EFTM_5.raw,GEX_BU_EFTM_9.raw,GEX_BU_EFTM_13.raw,GEX_BU_EFTM_17.raw,GEX_BU_EFTM_21.raw,GEX_BU_EFTM_3.raw,GEX_BU_EFTM_7.raw,GEX_BU_EFTM_11.raw,GEX_BU_EFTM_15.raw,GEX_BU_EFTM_19.raw,GEX_BU_EFTM_23.raw,BU_FTM_1.raw,BU_FTM_5.raw,BU_FTM_9.raw,BU_FTM_13.raw,BU_FTM_17.raw,BU_FTM_21.raw,BU_FTM_7.raw,BU_FTM_11.raw,BU_FTM_15.raw,BU_FTM_19.raw,BU_FTM_23.raw),add.cell.ids = c("GEX_BU_EFTM_1", "GEX_BU_EFTM_5","GEX_BU_EFTM_9","GEX_BU_EFTM_13","GEX_BU_EFTM_17","GEX_BU_EFTM_21","GEX_BU_EFTM_3","GEX_BU_EFTM_7","GEX_BU_EFTM_11","GEX_BU_EFTM_15","GEX_BU_EFTM_19","GEX_BU_EFTM_23","BU_FTM_1","BU_FTM_5","BU_FTM_9","BU_FTM_13","BU_FTM_17","BU_FTM_21","BU_FTM_7","BU_FTM_11","BU_FTM_15","BU_FTM_19","BU_FTM_23"))
+
+raw.data@assays$RNA@meta.features <- features
+rownames(raw.data@assays$RNA@meta.features)<- rownames(raw.data)
+
+filtered.data <- merge(x=GEX_BU_EFTM_1.filtered,y=c(GEX_BU_EFTM_5.filtered,GEX_BU_EFTM_9.filtered,GEX_BU_EFTM_13.filtered,GEX_BU_EFTM_17.filtered,GEX_BU_EFTM_21.filtered,GEX_BU_EFTM_3.filtered,GEX_BU_EFTM_7.filtered,GEX_BU_EFTM_11.filtered,GEX_BU_EFTM_15.filtered,GEX_BU_EFTM_19.filtered,GEX_BU_EFTM_23.filtered,BU_FTM_1.filtered,BU_FTM_5.filtered,BU_FTM_9.filtered,BU_FTM_13.filtered,BU_FTM_17.filtered,BU_FTM_21.filtered,BU_FTM_7.filtered,BU_FTM_11.filtered,BU_FTM_15.filtered,BU_FTM_19.filtered,BU_FTM_23.filtered),add.cell.ids = c("GEX_BU_EFTM_1", "GEX_BU_EFTM_5","GEX_BU_EFTM_9","GEX_BU_EFTM_13","GEX_BU_EFTM_17","GEX_BU_EFTM_21","GEX_BU_EFTM_3","GEX_BU_EFTM_7","GEX_BU_EFTM_11","GEX_BU_EFTM_15","GEX_BU_EFTM_19","GEX_BU_EFTM_23","BU_FTM_1","BU_FTM_5","BU_FTM_9","BU_FTM_13","BU_FTM_17","BU_FTM_21","BU_FTM_7","BU_FTM_11","BU_FTM_15","BU_FTM_19","BU_FTM_23"))
+
+filtered.data@assays$RNA@meta.features <- features
+rownames(filtered.data@assays$RNA@meta.features)<- rownames(filtered.data)
+
+```
+
+
+# Process Datasets
+```{r message=FALSE, warning=FALSE}
+# Process raw datasets in Seurat
+raw.data <- runSeurat(raw.data)
+gc()
+raw.data <- scoreCells(raw.data, seurat = TRUE)
+
+filtered.data <- runSeurat(filtered.data)
+filtered.data <- scoreCells(filtered.data, seurat = TRUE)
+
+```
+# Label Astrocytes
+```{r Label Astrocytes}
+library(SingleR)
+library(BiocParallel)
+#load reference dataset
+ref <- DataSetDB::getDatasetAsSE("DS000002655") #NGS2722 labels
+names(assays(ref)) <- c("counts","logcounts")
+
+ref <- ref[,colSums(counts(ref)) > 0]
+ref <- ref[,!is.na(ref$biologicalInterest)]
+features <- rownames(ref)
+symbols <- ref@rowRanges@elementMetadata@listData[["symbol"]]
+ref <- as(ref,"SummarizedExperiment")
+rownames(ref) <- symbols
+
+filtered.dataSE <- as.SingleCellExperiment(filtered.data)
+pred <- SingleR(test = filtered.dataSE, ref = ref,
+                  labels = ref$biologicalInterest, de.method="wilcox", BPPARAM = MulticoreParam() )
+filtered.data$FineLabels <- pred$labels
+filtered.data$PrunedLabels <- pred$pruned.labels
+```
+
+## Plot Umaps
+```{r}
+p1 <- DimPlot(raw.data,label = TRUE, pt.size=1) + ggtitle("Raw Dataset") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold"),legend.position = "none")
+p2 <- DimPlot(filtered.data,label=TRUE,pt.size=1) + ggtitle("Filtered Dataset")+
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold"),legend.position = "none")
+grid.arrange( p1, p2,nrow=1,top = textGrob("Seurat Clusters",gp=gpar(fontsize=20,font=3)))
+```
+
+## Find Astrocytes
+```{r message=FALSE, warning=FALSE}
+grid.arrange( FeaturePlot(raw.data,features= "astrocyte",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Raw Dataset") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Astrocyte") ,
+ FeaturePlot(filtered.data,features= "astrocyte",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Filtered Dataset") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Astrocyte"),
+ nrow=1,top = textGrob("Astrocyte Scores",gp=gpar(fontsize=20,font=3)))
+
+grid.arrange( DimPlot(filtered.data,group.by =  "FineLabels",reduction="umap", pt.size = 1, label = TRUE,repel = TRUE) + theme_void() + ggtitle("Cell Labels") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")),
+ FeaturePlot(filtered.data,features= "astrocyte",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Filtered Dataset") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Astrocyte"),
+ nrow=1,top = textGrob("Astrocyte Scores",gp=gpar(fontsize=20,font=3)))
+
+
+grid.arrange( FeaturePlot(raw.data,features= "microglia",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Raw Dataset") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "microglia") ,
+ FeaturePlot(filtered.data,features= "microglia",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Filtered Dataset") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "microglia"),
+ nrow=1,top = textGrob("Microglia Scores",gp=gpar(fontsize=20,font=3)))
+
+grid.arrange( DimPlot(filtered.data,group.by =  "FineLabels",reduction="umap", pt.size = 1, label = TRUE,repel = TRUE) + theme_void() + ggtitle("Cell Labels") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) ,
+ FeaturePlot(filtered.data,features= "microglia",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Filtered Dataset") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Astrocyte"),
+ nrow=1,top = textGrob("Astrocyte Scores",gp=gpar(fontsize=20,font=3)))
+
+```
+
+### Expression Plots
+```{r message=FALSE, warning=FALSE}
+grid.arrange(
+  VlnPlot(raw.data,features = "C1qa",group.by = "Model",log = TRUE) + ggtitle("Raw Dataset"),
+  VlnPlot(filtered.data,features = "C1qa",group.by = "Model",log=TRUE) + ggtitle("Filtered Dataset"),
+  nrow=1,top = textGrob("Expression of C1qa", gp=gpar(fontsize=20,font=3))
+)
+
+
+grid.arrange( FeaturePlot(raw.data,features= "C1qa",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Raw Dataset") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "C1qa Expression") ,
+ FeaturePlot(filtered.data,features= "C1qa",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Filtered Dataset") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "C1qa Expression"),
+ nrow=1,top = textGrob("C1qa Expression",gp=gpar(fontsize=20,font=3)))
+
+
+```
+
+# Doublet Detection
+```{r Run Doublet Finder, message=FALSE}
+filtered.data <- subset(filtered.data, subset = nCount_RNA > 10)
+raw.data <- subset(raw.data, subset = nCount_RNA > 10)
+filtered.sce <- as.SingleCellExperiment(filtered.data)
+raw.sce <- as.SingleCellExperiment(raw.data)
+
+filtered.sce <- scDblFinder(filtered.sce,nfeatures = 1500,samples="Sample")
+raw.sce <- scDblFinder(raw.sce,nfeatures = 1500,samples="Sample")
+
+
+```
+
+# Plot Doublet results
+
+```{r Transfer labels and Plot umap, echo=FALSE, message=FALSE}
+filtered.data$scDblFinder.class <- filtered.sce$scDblFinder.class
+filtered.data$scDblFinder.score <- filtered.sce$scDblFinder.score
+filtered.data$scDblFinder.weighted <- filtered.sce$scDblFinder.weighted
+filtered.data$scDblFinder.cxds_score <- filtered.sce$scDblFinder.cxds_score
+
+raw.data$scDblFinder.class <- raw.sce$scDblFinder.class
+raw.data$scDblFinder.score <- raw.sce$scDblFinder.score
+raw.data$scDblFinder.weighted <- raw.sce$scDblFinder.weighted
+raw.data$scDblFinder.cxds_score <- raw.sce$scDblFinder.cxds_score
+
+grid.arrange(
+  DimPlot(raw.data, group.by = "scDblFinder.class",pt.size = 1) + ggtitle("Raw Dataset"),
+  DimPlot(filtered.data, group.by = "scDblFinder.class",pt.size = 1) + ggtitle("Filtered Dataset"),
+  nrow=1,top = textGrob("Doublet Class",gp=gpar(fontsize=20,font=3)))
+
+```
+# Subset Astrocytes from filtered data
+```{r Astrocytes , fig.show='hold'}
+
+astros <- subset(filtered.data, subset = FineLabels == "astrocyte")
+astros <- runSeurat(astros)
+
+grid.arrange(
+  DimPlot(astros,label = TRUE, pt.size=1) + ggtitle("Seurat Clusters") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold"),legend.position = "none") ,
+  FeaturePlot(astros,features= "astrocyte",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Astrocyte Score") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd"))+labs(colour = "Astrocyte"),
+  nrow=1)
+
+grid.arrange(
+  FeaturePlot(astros,features = "Gfap",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Gfap") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd")),
+  FeaturePlot(astros,features = "Aldh1l1",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Aldh1l1") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd")),
+  nrow=1)
+
+grid.arrange(
+  FeaturePlot(astros,features = "Gja1",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Gja1") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd")),
+  FeaturePlot(astros,features = "Aqp4",reduction="umap", pt.size = 1) +
+  theme_void() + ggtitle("Aqp4") +
+  theme(plot.title = element_text(hjust = 0.5,size=12,face = "bold")) +
+  scale_colour_gradientn(colours = brewer.pal(n = 9, name = "YlOrRd")),
+  nrow=1)
+
+```
+
+## Astrocyte numbers
+```{r numbers}
+print(paste0("There are a total of ", format(dim(astros)[2],big.mark=",",scientific=FALSE),
+             " astrocytes.",
+             " From which ", format(table(astros$Disease)["AD"],big.mark=",",scientific=FALSE),
+             " are Diseased."))
+
+print(paste0("There were a total of ", format(dim(filtered.data)[2],big.mark=",",scientific=FALSE),
+             " cells."))
+
+print(paste0("Astrocytes account for ", format( round((dim(astros)[2]/dim(filtered.data)[2])*100,2), big.mark=",",scientific=FALSE),
+             "% of cells."))
+
+
+```
+# Save Dataset for further processing
+
+```{r Saving dataset}
+saveRDS(astros,"/gstore/project/neurodegen_meta/data/cellbender/GSE161224/Astrocytes.RDS")
+saveRDS(filtered.data,"/gstore/project/neurodegen_meta/data/cellbender/GSE161224/filteredData.RDS")
+saveRDS(raw.data,"/gstore/project/neurodegen_meta/data/cellbender/GSE161224/rawData.RDS")
+```
+
+
