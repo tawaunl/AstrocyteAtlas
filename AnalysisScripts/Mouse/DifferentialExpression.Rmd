@@ -1,0 +1,514 @@
+---
+title: "DifferentialExpression_CellBender_AllCells"
+author: "Tawaun Lucas"
+date: "2/7/2023"
+output:
+  pdf_document: default
+  toc: yes
+  toc_float: yes
+  toc_collapsed: yes
+  toc_depth: 3
+  number_sections: yes
+  html_document: null
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(out.width="100%")
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+# Load Libriaries
+
+```{r Libraries}
+library(plyr)
+library(tidyverse)
+library(metap)
+library(metafor)
+library(zellkonverter)
+library(SingleCellExperiment)
+library(DataSetDB)
+library(gp.sa.diff)
+library(gp.sa.solo)
+library(scater)
+library(Seurat)
+library(ggrepel)
+```
+
+Let's run differential expression results for each study separately 
+# Load Data
+
+```{r}
+data <- readRDS("/gstore/project/neurodegen_meta/data/IntegratedSeuratAstrocytes_2023.08.rds")
+AD_res <- list()
+MS_res <- list()
+
+# Get MS and AD studies
+studies <- unique(data$StudyName)
+studies <- studies[!studies %in% c("Zhao 5XFAD")] ### Zhao only have AD samples so we are excluding it
+AD_studies <- as.vector(studies[!studies %in% c("Zhao 5XFAD","Shen Lysolecithin",
+                                      "Shen Cuprizone", "Wheeler EAE",
+                                      "Wheeler SortedAstrocytes EAE","Shi P301S")] )#Shi only has two samples so also excluding
+
+MS_studies <- as.vector(studies[studies %in% c("Shen Lysolecithin","Shen Cuprizone",
+                                      "Wheeler EAE","Wheeler SortedAstrocytes EAE")])
+
+counts <- GetAssayData(object = data,
+                      slot = "counts",
+                      assay="RNA") # get counts table
+se <- SingleCellExperiment(assays = list(counts = counts),
+                                colData = data@meta.data) #convert to SE object
+
+summed <- aggregateAcrossCells(se, 
+    id=colData(se)[,c("StudyName", "Sample")]) #puesdobulk all cells by sample within study
+
+
+# do DE analysis on each study AD vs control and save results to list
+for (i in 1:length(AD_studies)) {
+   study <- AD_studies[i]
+   out <- runVoom(summed, groups="Disease", comparisons=list(c("AD", "AD_control")),
+                  subset.factor="StudyName",subset.levels=c(study), commit="never")
+   
+   out_final <- as.data.frame(out[[1]]) %>% mutate(symbol = rowData(summed)$symbol)
+   
+   AD_res[[study]] <- out_final
+}
+
+# do DE analysis on each study MS vs control and save results to list
+for (i in 1:length(MS_studies)) {
+  study <- MS_studies[i]
+   out <- runVoom(summed, groups="Disease", comparisons=list(c("MS", "MS_control")),
+                  subset.factor="StudyName",subset.levels=c(study), commit="never")
+   
+   out_final <- as.data.frame(out[[1]]) %>% mutate(symbol = rowData(summed)$symbol)
+   
+   MS_res[[study]] <- out_final
+}
+
+```
+
+# AD Analysis
+
+## Meta with Fisher's method & DerSimonian-Laird
+
+```{r Adding Gene names_AD}
+
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-3")) # get gene names
+
+#create empty matrix to hold values
+fc <- matrix(0, ncol=length(AD_res), nrow=dim(feat)[1])
+rownames(fc) <- feat$symbol #fold changes
+
+pval <- matrix(NA, ncol=length(AD_res), nrow=dim(feat)[1])
+rownames(pval) <- feat$symbol #pvalues
+
+mexp <- matrix(NA, ncol=length(AD_res), nrow=dim(feat)[1])
+rownames(mexp) <- feat$symbol # mean expression
+
+sefc <- matrix(NA, ncol=length(AD_res), nrow=dim(feat)[1])
+rownames(sefc) <- feat$symbol #standard error of fold change
+
+# for each study, at each gene,get FC, Avg expression, P-value and calculate standard error
+for(i in 1:length(AD_res)){
+	m   <- match(rownames(fc), rownames(AD_res[[i]]))
+	f.a <- !is.na(m)
+	f.b <- m[f.a]
+	fc[f.a,i] <- AD_res[[i]][f.b,"LogFC"]
+	pval[f.a,i] <- AD_res[[i]][f.b,"PValue"]
+	mexp[f.a,i] <- AD_res[[i]][f.b,"AveExpr"]
+	sefc[f.a,i] <- AD_res[[i]][f.b,"LogFC"]/AD_res[[i]][f.b,"t"] #standard error of effect size
+}
+
+# name columns of matricies
+x<-strsplit(names(AD_res),".", fixed=T)
+x2 <- sapply(x, function(x) purrr::pluck(x,1))
+colnames(pval) = x2
+colnames(fc) = x2
+colnames(mexp) = x2
+colnames(sefc) = x2
+
+#combine matricies into list for calculations
+deg_master <- list(pval=pval, fc=fc, se_fc=sefc, mean_exp=mexp)
+
+```
+
+## Meta-analysis for each gene in  AD
+
+```{r}
+f <- colnames(deg_master$pval)
+pval <- deg_master$pval[, f]
+fc <- deg_master$fc[, f]
+mexp <- deg_master$mean_exp[, f]
+sefc <- cbind(fc,deg_master$se_fc[,f])
+  
+pval_up <- pval * 0
+pval_down <- pval * 0
+# for each gene calculate the get pvalue based on FC direction 
+for (i in 1:dim(fc)[2]) {
+    f1 <- which(fc[, i] > 0)
+    f2 <- which(fc[, i] < 0)
+    pval_up[f1, i] <- pval[f1, i] * 0.5
+    pval_up[f2, i] <- 1 - (pval[f2, i] * 0.5)
+    pval_down[f1, i] <- 1 - (pval[f1, i] * 0.5)
+    pval_down[f2, i] <- pval[f2, i] * 0.5
+    
+  }
+
+
+# Syntax
+x <- pval_down[rowSums(is.na(pval_down)) != ncol(pval_down), ]
+# Combine p-values by the sum of logs method, also known as Fisher's method 
+meta_up <- suppressWarnings(apply(pval_up, 1, function(y) sumlog(y[!is.na(y)])$p))
+meta_down <- suppressWarnings(apply(pval_down, 1, function(y) sumlog(y[!is.na(y)])$p))
+#average FC and expression 
+mean_fc <- rowMeans(fc, na.rm = T)
+mean_exp <- rowMeans(mexp, na.rm = T)
+
+
+#remove duplicates from directionality
+meta_down <- meta_down[-which(duplicated(names(meta_down))==TRUE)]
+meta_up <- meta_up[-which(duplicated(names(meta_up))==TRUE)]
+mean_fc <- mean_fc[-which(duplicated(names(mean_fc))==TRUE)]
+mean_exp <- mean_exp[-which(duplicated(names(mean_exp))==TRUE)]
+
+# find genes that are shared across studies
+f_se_fc <- apply(sefc[,1:8],1,function(x) sum(!is.na(x))>=1)
+f_se_se <- apply(sefc[,9:16],1,function(x) sum(!is.na(x))>=1)
+f_se <- f_se_fc & f_se_se
+
+#Function to fit meta-analytic random-effects model using DeSerminonian and Laird
+dsl_res <- apply(sefc[f_se,], 1, function(row) rma(yi=as.vector(row[1:8]),vi=as.vector(row[9:16]),method="DL"))
+
+# Get columns  
+betas <- sapply(dsl_res,function(x) purrr::pluck(x,"beta"))
+ses <- sapply(dsl_res,function(x) purrr::pluck(x,"se"))
+dl_ps <- sapply(dsl_res,function(x) purrr::pluck(x,"pval"))
+dl_ps <- sapply(dsl_res,function(x) purrr::pluck(x,"pval"))
+
+# Create dataframe of results
+dl_sub <- data.frame(ID=rownames(sefc)[f_se],beta=betas,se=ses,pval=dl_ps)
+
+dl_all <- data.frame(ID=rownames(sefc))
+dl_all <- left_join(dl_all,dl_sub,by=c("ID"="ID"))
+
+dl_all <- dl_all[-which(duplicated(dl_all$ID)==TRUE),]
+n_tested = apply(pval_up, 1, function(y)
+  sum(!is.na(y))) # get number of studies gene shows up in
+n_tested <- n_tested[-which(duplicated(names(n_tested))==TRUE)]
+n_up = apply(fc, 1, function(y)
+  sum(y > 0, na.rm = T)) # get number of studies gene FC is up-regulated
+n_up <- n_up[-which(duplicated(names(n_up))==TRUE)]
+n_down = apply(fc, 1, function(y)
+  sum(y < 0, na.rm = T))# get number of studies gene FC is down-regulated
+n_down <- n_down[-which(duplicated(names(n_down))==TRUE)]
+
+#Create final Dataframe of results
+temp <-
+  data.frame(
+    ID = dl_all$ID,
+    AveExpr = as.numeric(mean_exp),
+    PValue = dl_all$pval,
+    FDR = p.adjust(dl_all$pval,method="BH"),
+    LogFC = as.numeric(mean_fc),
+    dl_mu = dl_all$beta,
+    dl_s = dl_all$se,
+    metap_up = meta_up,
+    metap_down = meta_down,
+    adj_metap_up = p.adjust(meta_up, method = "BH"),
+    adj_metap_down = p.adjust(meta_down, method = "BH"),
+    n_tested = n_tested,
+    n_up = n_up,
+    n_down = n_down
+    )
+
+# Clean dataframe of results
+x <- match(temp$ID,feat$symbol)
+features<- feat[x,]
+temp <- left_join(temp, features,by=c("ID"="symbol"))
+temp<- temp[which(is.nan(temp$AveExpr)==FALSE),]
+ord <- order(temp$metap_up)
+
+temp <- temp[ord, ]
+x <-
+  c(
+    "ID.y",
+    "ID",
+    "AveExpr",
+    "PValue",
+    "FDR",
+    "LogFC",
+    "dl_mu",
+    "dl_s",
+    "metap_up",
+    "metap_down",
+    "adj_metap_up",
+    "adj_metap_down",
+    "n_tested",
+    "n_up",
+    "n_down","desc"
+  )
+  
+res_dsl <- temp %>% dplyr::select(x)
+colnames(res_dsl)[1:2] <- c("ID","symbol")
+```
+
+## Volcano Plot
+
+```{r}
+plotdata_up <- res_dsl %>% filter(LogFC > 0)
+res_dsl_plot <- data.frame(ID=plotdata_up$ID,
+                      symbol=plotdata_up$symbol,
+                      dl_mu=plotdata_up$dl_mu,
+                      LogFC = plotdata_up$LogFC,
+                      PValue=plotdata_up$metap_up,
+                      FDR=plotdata_up$adj_metap_up,
+                      n_tested=plotdata_up$n_tested,
+                      n_up=plotdata_up$n_up,
+                      n_down=plotdata_up$n_down)
+plotdata_down <- res_dsl %>% filter(LogFC < 0)
+res_dsl_plot <- rbind(res_dsl_plot,data.frame(ID=plotdata_down$ID,
+                      symbol=plotdata_down$symbol,
+                      dl_mu=plotdata_down$dl_mu,
+                      LogFC = plotdata_down$LogFC,
+                      PValue=plotdata_down$metap_down,
+                      FDR=plotdata_down$adj_metap_down,
+                      n_tested=plotdata_down$n_tested,
+                      n_up=plotdata_down$n_up,
+                      n_down=plotdata_down$n_down))
+res_dsl_plot <- res_dsl_plot %>% mutate(sig = ifelse((FDR<=0.05 | FDR <= 0.05) & n_up | n_down >= n_tested/2 & abs(dl_mu) >= 0.5, "yes", "no"))
+
+
+res_dsl_plot$diffexpressed <- "unchanged"
+
+res_dsl_plot$diffexpressed[res_dsl_plot$dl_mu >= 0.5 &
+                             res_dsl_plot$FDR<=0.05 &
+                             res_dsl_plot$sig=="yes" ] <- "up"
+
+res_dsl_plot$diffexpressed[res_dsl_plot$dl_mu <= -0.5 &
+                             res_dsl_plot$FDR<=0.05 &
+                             res_dsl_plot$sig=="yes" ] <- "down"
+
+mycolors <- c("blue", "red", "black")
+names(mycolors) <- c("down", "up", "unchanged")
+ggplot(data=res_dsl_plot, aes(x=dl_mu, y=-log10(FDR), col=diffexpressed, label=symbol)) + 
+  geom_point() + 
+  theme_classic() +
+  geom_text_repel(show.legend = FALSE)+ 
+  scale_colour_manual(values = mycolors) + ggtitle("PseudoBulk Meta AD vs Control ")+
+  theme(legend.text = element_text(size=12,face = "bold"),
+        legend.title = element_text(size=14,face='bold'),
+        legend.key.size = unit(1 ,'cm'),
+        axis.title = element_text(size=18,face='bold'),
+        plot.title = element_text(size=22,face='bold',hjust = 0.5)) +
+  xlab("Meta-LogFoldChange") + ylab(bquote(bold(-log[10](Meta-Adj.PValue))))
+
+saveRDS(res_dsl, "/gstore/project/neurodegen_meta/data/cellbender/res_dsl_AD_full.011824.rds")
+```
+
+# MS Analysis
+
+## Meta with Fisher's method & DerSimonian-Laird
+
+```{r Adding Gene names}
+feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCm38/GRCm38.IGIS4.0.genes.rds@REVISION-3"))
+
+fc <- matrix(0, ncol=length(MS_res), nrow=dim(feat)[1])
+rownames(fc) <- feat$symbol
+
+pval <- matrix(NA, ncol=length(MS_res), nrow=dim(feat)[1])
+rownames(pval) <- feat$symbol
+
+mexp <- matrix(NA, ncol=length(MS_res), nrow=dim(feat)[1])
+rownames(mexp) <- feat$symbol
+
+sefc <- matrix(NA, ncol=length(MS_res), nrow=dim(feat)[1])
+rownames(sefc) <- feat$symbol
+
+for(i in 1:length(MS_res)){
+	m<-match(rownames(fc), rownames(MS_res[[i]]))
+	f.a=!is.na(m)
+	f.b=m[f.a]
+	fc[f.a,i] <- MS_res[[i]][f.b,"LogFC"]
+	pval[f.a,i] <- MS_res[[i]][f.b,"PValue"]
+	mexp[f.a,i] <- MS_res[[i]][f.b,"AveExpr"]
+	sefc[f.a,i] <- MS_res[[i]][f.b,"LogFC"]/MS_res[[i]][f.b,"t"]
+}
+
+x<-strsplit(names(MS_res),".", fixed=T)
+x2 <- sapply(x, function(x) purrr::pluck(x,1))
+colnames(pval) = x2
+colnames(fc) = x2
+colnames(mexp) = x2
+colnames(sefc) = x2
+
+
+deg_master <- list(pval=pval, fc=fc, se_fc=sefc, mean_exp=mexp)
+
+```
+
+## Meta-analysis for each cell type
+
+```{r}
+f <- colnames(deg_master$pval)
+pval <- deg_master$pval[, f]
+fc <- deg_master$fc[, f]
+mexp <- deg_master$mean_exp[, f]
+sefc <- cbind(fc,deg_master$se_fc[,f])
+  
+pval_up <- pval * 0
+pval_down <- pval * 0
+  
+for (i in 1:dim(fc)[2]) {
+    f1 <- which(fc[, i] > 0)
+    f2 <- which(fc[, i] < 0)
+    pval_up[f1, i] <- pval[f1, i] * 0.5
+    pval_up[f2, i] <- 1 - (pval[f2, i] * 0.5)
+    pval_down[f1, i] <- 1 - (pval[f1, i] * 0.5)
+    pval_down[f2, i] <- pval[f2, i] * 0.5
+    
+  }
+
+
+# Syntax
+x <- pval_down[rowSums(is.na(pval_down)) != ncol(pval_down), ]
+
+meta_up <- suppressWarnings(apply(pval_up, 1, function(y) sumlog(y[!is.na(y)])$p))
+meta_down <- suppressWarnings(apply(pval_down, 1, function(y) sumlog(y[!is.na(y)])$p))
+mean_fc <- rowMeans(fc, na.rm = T)
+mean_exp <- rowMeans(mexp, na.rm = T)
+
+meta_down <- meta_down[-which(duplicated(names(meta_down))==TRUE)]
+meta_up <- meta_up[-which(duplicated(names(meta_up))==TRUE)]
+mean_fc <- mean_fc[-which(duplicated(names(mean_fc))==TRUE)]
+mean_exp <- mean_exp[-which(duplicated(names(mean_exp))==TRUE)]
+
+  
+f_se_fc <- apply(sefc[,1:4],1,function(x) sum(!is.na(x))>=0.1)
+f_se_se <- apply(sefc[,5:8],1,function(x) sum(!is.na(x))>=0.1)
+f_se <- f_se_fc & f_se_se
+
+dsl_res <- apply(sefc[f_se,], 1, function(row) rma(yi=as.vector(row[1:4]),vi=as.vector(row[5:8]),method="DL"))
+
+betas <- sapply(dsl_res,function(x) purrr::pluck(x,"beta"))
+ses <- sapply(dsl_res,function(x) purrr::pluck(x,"se"))
+dl_ps <- sapply(dsl_res,function(x) purrr::pluck(x,"pval"))
+dl_ps <- sapply(dsl_res,function(x) purrr::pluck(x,"pval"))
+
+dl_sub <- data.frame(ID=rownames(sefc)[f_se],beta=betas,se=ses,pval=dl_ps)
+
+dl_all <- data.frame(ID=rownames(sefc))
+dl_all <- left_join(dl_all,dl_sub,by=c("ID"="ID"))
+
+dl_all <- dl_all[-which(duplicated(dl_all$ID)==TRUE),]
+n_tested = apply(pval_up, 1, function(y)
+  sum(!is.na(y)))
+n_tested <- n_tested[-which(duplicated(names(n_tested))==TRUE)]
+n_up = apply(fc, 1, function(y)
+  sum(y > 0, na.rm = T))
+n_up <- n_up[-which(duplicated(names(n_up))==TRUE)]
+n_down = apply(fc, 1, function(y)
+  sum(y < 0, na.rm = T))
+n_down <- n_down[-which(duplicated(names(n_down))==TRUE)]
+
+temp <-
+  data.frame(
+    ID = dl_all$ID,
+    AveExpr = as.numeric(mean_exp),
+    PValue = dl_all$pval,
+    FDR = p.adjust(dl_all$pval,method="BH"),
+    LogFC = as.numeric(mean_fc),
+    dl_mu = dl_all$beta,
+    dl_s = dl_all$se,
+    metap_up = meta_up,
+    metap_down = meta_down,
+    adj_metap_up = p.adjust(meta_up, method = "BH"),
+    adj_metap_down = p.adjust(meta_down, method = "BH"),
+    n_tested = n_tested,
+    n_up = n_up,
+    n_down = n_down
+    )
+
+x <- match(temp$ID,feat$symbol)
+features<- feat[x,]
+temp <- left_join(temp, features,by=c("ID"="symbol"))
+temp<- temp[which(is.nan(temp$AveExpr)==FALSE),]
+ord <- order(temp$metap_up)
+
+temp <- temp[ord, ]
+x <-
+  c(
+    "ID.y",
+    "ID",
+    "AveExpr",
+    "PValue",
+    "FDR",
+    "LogFC",
+    "dl_mu",
+    "dl_s",
+    "metap_up",
+    "metap_down",
+    "adj_metap_up",
+    "adj_metap_down",
+    "n_tested",
+    "n_up",
+    "n_down","desc"
+  )
+  
+res_dsl <- temp %>% dplyr::select(x)
+colnames(res_dsl)[1:2] <- c("ID","symbol")
+
+saveRDS(res_dsl, "/gstore/project/neurodegen_meta/data/cellbender/res_dsl_MS_full.011824.rds")
+```
+
+## Volcano Plot
+
+```{r}
+plotdata_up <- res_dsl %>% filter(LogFC > 0)
+res_dsl_plot <- data.frame(ID=plotdata_up$ID,
+                      symbol=plotdata_up$symbol,
+                      dl_mu=plotdata_up$dl_mu,
+                      LogFC = plotdata_up$LogFC,
+                      PValue=plotdata_up$metap_up,
+                      FDR=plotdata_up$adj_metap_up,
+                      n_tested=plotdata_up$n_tested,
+                      n_up=plotdata_up$n_up,
+                      n_down=plotdata_up$n_down)
+plotdata_down <- res_dsl %>% filter(LogFC < 0)
+res_dsl_plot <- rbind(res_dsl_plot,data.frame(ID=plotdata_down$ID,
+                      symbol=plotdata_down$symbol,
+                      dl_mu=plotdata_down$dl_mu,
+                      LogFC = plotdata_down$LogFC,
+                      PValue=plotdata_down$metap_down,
+                      FDR=plotdata_down$adj_metap_down,
+                      n_tested=plotdata_down$n_tested,
+                      n_up=plotdata_down$n_up,
+                      n_down=plotdata_down$n_down))
+res_dsl_plot <- res_dsl_plot %>% mutate(sig = ifelse((FDR<=0.05 | FDR <= 0.05) & n_up | n_down >= n_tested/2 & abs(dl_mu) >= 0.5, "yes", "no"))
+
+
+res_dsl_plot$diffexpressed <- "unchanged"
+
+res_dsl_plot$diffexpressed[res_dsl_plot$dl_mu >= 0.5 &
+                             res_dsl_plot$FDR<=0.05 &
+                             res_dsl_plot$sig=="yes" ] <- "up"
+
+res_dsl_plot$diffexpressed[res_dsl_plot$dl_mu <= -0.5 &
+                             res_dsl_plot$FDR<=0.05 &
+                             res_dsl_plot$sig=="yes" ] <- "down"
+
+mycolors <- c("blue", "red", "black")
+names(mycolors) <- c("down", "up", "unchanged")
+ggplot(data=res_dsl_plot, aes(x=dl_mu, y=-log10(FDR), col=diffexpressed, label=symbol)) + 
+  geom_point() + 
+  theme_classic() +
+  geom_text_repel(show.legend = FALSE)+ 
+  scale_colour_manual(values = mycolors) + ggtitle("PseudoBulk Meta AD vs Control ")+
+  theme(legend.text = element_text(size=12,face = "bold"),
+        legend.title = element_text(size=14,face='bold'),
+        legend.key.size = unit(1 ,'cm'),
+        axis.title = element_text(size=18,face='bold'),
+        plot.title = element_text(size=22,face='bold',hjust = 0.5)) +
+  xlab("Meta-LogFoldChange") + ylab(bquote(bold(-log[10](Meta-Adj.PValue))))
+
+```
