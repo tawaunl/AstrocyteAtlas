@@ -1,9 +1,10 @@
 # Figure 8 
 library(ggplot2)
 library(gg4way)
+source("~/Documents/scHelpers.R")
 
-mouse.AD <- readRDS("/gstore/project/neurodegen_meta/data/cellbender/res_dsl_AD_full.060723.rds")
-human.AD <- readRDS(paste0("/gstore/data/omni/neuroscience/AD/Astrocytes_AD_MS_PD_meta/AD_MS_PD_cellbender_integration/harmony_integration/another_run_after_removing_high_mito_clusters/DEGs/",
+mouse.AD <- readRDS("~/Documents/AstrocytePaper/res_dsl_AD_full.060723.rds")
+human.AD <- readRDS(paste0("~/Documents/AstrocytePaper/Human/",
                            "res_dsl.AD.cain_fixed.072924.rds"))
 human.AD <- generatePlotTable(human.AD)
 mouse.AD <- generatePlotTable(mouse.AD)
@@ -11,7 +12,7 @@ mouse.AD <- generatePlotTable(mouse.AD)
 mouse.AD$symbol <- toupper(mouse.AD$symbol)
 mouse.AD$ID <- mouse.AD$symbol
 human.AD$ID <- human.AD$symbol
-mouse.AD <- as.data.frame(res1) %>% dplyr::mutate(diffexpressed=ifelse(dl_mu>=0.5 & FDR<=0.05 & n_up>= max(n_tested)/2, "up", 
+mouse.AD <- as.data.frame(mouse.AD) %>% dplyr::mutate(diffexpressed=ifelse(dl_mu>=0.5 & FDR<=0.05 & n_up>= max(n_tested)/2, "up", 
                                                                    ifelse(dl_mu<=-0.5 & FDR<=0.05 & n_down>= max(n_tested)/2, "down", "unchanged"))) 
 
 human.AD <- as.data.frame(human.AD) %>% dplyr::mutate(diffexpressed=ifelse(dl_mu>=0.5 & FDR<=0.05 & n_up>= max(n_tested)/2, "up", 
@@ -65,9 +66,9 @@ for(set in 1:length(enrichPaths)){
 
 # A. AD 4 way ----------------------------
 
-png(filename ="/gstore/data/astroMetaAnalysis/neurodegeneration_meta-analysis/Figures/MouseADvsHumanAD.png",
-    width=1500,height=1500,res=150)
-plot_4way( human.AD,mouse.AD,  "Human AD","Mouse AD")
+png("~/Documents/AstrocytePaper/Figure8/MouseADvsHumanAD_4way.png",
+    width=3000,height=2500,res = 300)
+plot_4way( human.AD,mouse.AD,  "Human AD","Mouse AD models")
 dev.off()
 
 png(filename ="/gstore/data/astroMetaAnalysis/neurodegeneration_meta-analysis/Figures/MouseADvsHumanAD_pathways.png",
@@ -77,7 +78,7 @@ dev.off()
 saveRDS(enrichPaths,"/gstore/data/astroMetaAnalysis/neurodegeneration_meta-analysis/Rscripts/Mouse_HumanComparison/ADComparisonPathways.rds")
 
 # C. Plot AD Comparison Plots ------------------
-enrichPaths<- readRDS("/gstore/data/astroMetaAnalysis/neurodegeneration_meta-analysis/Rscripts/Mouse_HumanComparison/ADComparisonPathways.rds")
+enrichPaths<- readRDS("~/Documents/AstrocytePaper/Figure8/ADComparisonPathways.rds")
 
 topPaths <- lapply(enrichPaths,function(x){
   data<- x@result
@@ -120,7 +121,8 @@ full1$Name <- factor(full1$Name,
 full1$Cluster <- factor(full1$Cluster,levels = c("AD Shared Genes","AD Mouse Distinct",
                                                  "AD Human Distinct"))
 ## Plot C -------------------------------
-pdf("/gstore/data/astroMetaAnalysis/neurodegeneration_meta-analysis/Rscripts/Mouse_HumanComparison/ADPaths.pdf")
+pdf("~/Documents/AstrocytePaper/Figure8/ADPaths.pdf",
+    height=12,width=8)
 ggplot(full1, aes(x=Cluster, y=Name)) +
   geom_point(aes(size = GeneRatio, color = p.adjust)) +
   scale_colour_gradient(limits=c(min(full1$p.adjust), max(full1$p.adjust)), low="red",high="blue") +
@@ -128,7 +130,7 @@ ggplot(full1, aes(x=Cluster, y=Name)) +
   theme(axis.title = element_blank()) + 
   theme(axis.title.x = element_text(size = 14,face="bold"),
         axis.text.x = element_text(angle = 90,size=14),
-        axis.text.y = element_text(size=12)) +
+        axis.text.y = element_text(size=20)) +
   theme(plot.title = element_text(hjust = 0.5,size=20,face='bold'))+ 
   scale_size(range = c(3,11))
 dev.off()
@@ -136,8 +138,8 @@ dev.off()
 
 # B. MS 4-way ------------------
 
-mouse.MS <- readRDS("/gstore/project/neurodegen_meta/data/cellbender/res_dsl_MS_full.060723.rds")
-human.MS <- readRDS(paste0("/gstore/data/omni/neuroscience/AD/Astrocytes_AD_MS_PD_meta/AD_MS_PD_cellbender_integration/harmony_integration/another_run_after_removing_high_mito_clusters/DEGs/",
+mouse.MS <- readRDS("~/Documents/AstrocytePaper/res_dsl_MS_full.060723.rds")
+human.MS <- readRDS(paste0("~/Documents/AstrocytePaper/Human/",
                            "res_dsl.MS.080124.rds"))
 human.MS <- generatePlotTable(human.MS)
 mouse.MS <- generatePlotTable(mouse.MS)
@@ -190,9 +192,9 @@ label <- MS_plot$data |>
   dplyr::filter(Significant == "Significant in Both") |>
   dplyr::pull(symbol)
 ## Plot B ----------
-png(filename ="/gstore/data/astroMetaAnalysis/neurodegeneration_meta-analysis/Figures/MouseMSvsHumanMS.png",
-    width=1500,height=1500,res=150)
-plot_4way( human.MS,mouse.MS,  "Human MS","Mouse MS")
+png("~/Documents/AstrocytePaper/Figure8/MouseMSvsHumanMS.png",
+    width=3000,height=2500,res=300)
+plot_4way( human.MS,mouse.MS,  "Human MS","Mouse MS models")
 dev.off()
 
 png(filename ="/gstore/data/astroMetaAnalysis/neurodegeneration_meta-analysis/Figures/MouseADvsHumanMS_pathways.png",width=3000,height=1000,res=150)
@@ -201,7 +203,7 @@ dev.off()
 saveRDS(enrichPaths,"/gstore/data/astroMetaAnalysis/neurodegeneration_meta-analysis/Rscripts/Mouse_HumanComparison/MSComparisonPathways.rds")
 
 #D. Compare MS ----------------------
-enrichPaths <- readRDS("/gstore/data/astroMetaAnalysis/neurodegeneration_meta-analysis/Rscripts/Mouse_HumanComparison/MSComparisonPathways.rds")
+enrichPaths <- readRDS("~/Documents/AstrocytePaper/Figure8/MSComparisonPathways.rds")
 topPaths <- lapply(enrichPaths,function(x){
   data<- x@result
   data <- data[order(data$p.adjust),]
@@ -245,7 +247,8 @@ full1$Name <- factor(full1$Name,
 full1$Cluster <- factor(full1$Cluster,levels = c("MS Mouse Distinct",
                                                  "MS Human Distinct"))
 ## Plot D -------------------
-pdf("/gstore/data/astroMetaAnalysis/neurodegeneration_meta-analysis/Rscripts/Mouse_HumanComparison/MSPaths.pdf")
+pdf("~/Documents/AstrocytePaper/Figure8/MSPaths.pdf",
+    width=8,height=12)
 ggplot(full1, aes(x=Cluster, y=Name)) +
   geom_point(aes(size = GeneRatio, color = p.adjust)) +
   scale_colour_gradient(limits=c(min(full1$p.adjust), max(full1$p.adjust)), low="red",high="blue") +
@@ -253,7 +256,7 @@ ggplot(full1, aes(x=Cluster, y=Name)) +
   theme(axis.title = element_blank()) + 
   theme(axis.title.x = element_text(size = 14,face="bold"),
         axis.text.x = element_text(angle = 90,size=14),
-        axis.text.y = element_text(size=12)) +
+        axis.text.y = element_text(size=20)) +
   theme(plot.title = element_text(hjust = 0.5,size=20,face='bold'))+ 
   scale_size(range = c(3,11))
 dev.off()
