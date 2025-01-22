@@ -75,19 +75,19 @@ labels <- c("Gfap","Id3","Apoe","Clu","Aldoc","Cst3","Aqp4")
 
 res$symbol <- rownames(res)
 #### Plot A ----------------
-png(file.path(dir,"Figure2","DAA1vsDAA2_VolcanoPlot.png" ),
-    width = 1500,height=1500,res=300)
+cairo_pdf(file.path(dir,"Figure3","DAA1vsDAA2_VolcanoPlot.pdf" ),
+    width = 15,height=15)
 ggplot(data=res, aes(x=logFC, y=-log10(FDR), col=diffexpressed, label=symbol)) + 
-  geom_point(alpha=0.6,size=3.5) + 
+  ggrastr::geom_point_rast(alpha=0.6,size=3.5) + 
   theme_classic()+ geom_text_repel(size=8,data = subset(res, diffexpressed =="DAA1"| diffexpressed=="DAA2"),
                                    show.legend = FALSE) +
   scale_colour_manual(values = mycolors) + ggtitle("DAA1 vs DAA2")+
-  theme(legend.text = element_text(size=16,face = "bold"),
+  theme(legend.position = "none",
         legend.title = element_text(size=18,face='bold'),
         legend.key.size = unit(1 ,'cm'),
-        axis.title = element_text(size=20,face='bold'),
-        plot.title = element_text(size=24,face='bold',hjust = 0.5)) +
-  xlab("Avg. LogFoldChange") + ylab(bquote(bold(-log[10](PValue))))
+        axis.title = element_text(size=24),
+        plot.title = element_text(size=28,hjust = 0.5)) +
+  xlab(bquote(log[2]("Fold Change"))) + ylab(bquote(-log[10](PValue)))
 dev.off()
 
 write.csv(res, file.path(dir,"Figure3",paste0("DAA1vsDAA2_DEtable.csv")))
@@ -96,33 +96,18 @@ write.csv(res, file.path(dir,"Figure3",paste0("DAA1vsDAA2_DEtable.csv")))
 library(clusterProfiler)
 res <- read.csv(file.path(dir,"Figure3",paste0("DAA1vsDAA2_DEtable.csv")))
 
-gene.df <- bitr( res$symbol, fromType = "SYMBOL",
-                 toType = c("ENSEMBL", "ENTREZID"),
-                 OrgDb = org.Mm.eg.db::org.Mm.eg.db)
-x <- match(gene.df$SYMBOL,res$symbol)
-res1 <- res[x,]
-res1$GENEID <- gene.df$ENTREZID
+DAA1.genes <- res$symbol[which(res1$diffexpressed=="DAA1")]
 
-DAA1.gsea.1 <- res1$logFC[res1$logFC > 0]
+DAA2.genes <- res$symbol[which(res1$diffexpressed=="DAA2")]
 
-names(DAA1.gsea.1) <- res1$GENEID[res1$logFC > 0]
-DAA1.gsea.1 <- DAA1.gsea.1[order(DAA1.gsea.1,decreasing = TRUE)]
+ck <- compareCluster(list(DAA1=DAA1.genes,DAA2=DAA2.genes),
+                     fun = "enrichGO",keyType="SYMBOL",
+                     OrgDb = org.Mm.eg.db::org.Mm.eg.db,ont="BP")
 
-DAA2.gsea.1 <- res1$logFC[res1$logFC < 0]
-
-names(DAA2.gsea.1) <- res1$GENEID[res1$logFC < 0]
-DAA2.gsea.1 <- DAA2.gsea.1[order(DAA2.gsea.1,decreasing = TRUE)]
-
-DAA1.go <- enrichGO(names(DAA1.gsea.1),OrgDb = org.Mm.eg.db::org.Mm.eg.db,ont="BP")
-DAA2.go <- enrichGO(names(DAA2.gsea.1),OrgDb = org.Mm.eg.db::org.Mm.eg.db,ont="BP")
-
-ck <- compareCluster(list(DAA1=DAA1.gsea.1,DAA2=DAA2.gsea.1 ),
-                     fun = "gseGO",OrgDb = org.Mm.eg.db::org.Mm.eg.db,ont="BP",
-                     scoreType="pos",eps=0)
 
 ####  Plot B ----------- 
-pdf(file.path(dir,"Figure3",paste0("DAA1vsDAA2_Pathways.pdf")),
-    width = 4.5,height=5)
+cairo_pdf(file.path(dir,"Figure3",paste0("DAA1vsDAA2_Pathways.pdf")),
+    width = 4.5,height=7)
 dotplot(ck)
 dev.off()
 
@@ -130,7 +115,33 @@ dev.off()
 ## Read DE ----------
 DAA1 <- readRDS(file.path(dir,"DAA1vsHomeostatic_metaDE.rds"))
 DAA2 <- readRDS(file.path(dir,"DAA2vsHomeostatic_metaDE.rds"))
-## Pathways ----------
+
+DAA1 <- generatePlotTable(DAA1)
+DAA2 <- generatePlotTable(DAA2)
+DAA1$dl_mu <- DAA1$dl_mu *-1
+DAA2$dl_mu <- DAA2$dl_mu *-1
+
+DAA1$diffexpressed <- "unchanged"
+
+DAA1$diffexpressed[DAA1$dl_mu   >= 0.5 &
+                     DAA1$PValue <= 0.05 &
+                     DAA1$sig    == "yes" ] <- "DAA1"
+
+DAA1$diffexpressed[DAA1$dl_mu   <= -0.5 &
+                     DAA1$PValue <= 0.05 &
+                     DAA1$sig    == "yes" ] <- "Homeostatic"
+
+DAA2$diffexpressed <- "unchanged"
+
+DAA2$diffexpressed[DAA2$dl_mu   >= 0.25 &
+                     DAA2$PValue <= 0.05 &
+                     DAA2$sig    == "yes" ] <- "DAA2"
+
+DAA2$diffexpressed[DAA2$dl_mu   <= -0.5 &
+                     DAA2$PValue <= 0.05 &
+                     DAA2$sig   == "yes" ] <- "Homeostatic"
+
+## Pathways ----------## PDAA1athways ----------
 DAA1.gsea <- setNames(DAA1$dl_mu,DAA1$ID)
 DAA2.gsea <- setNames(DAA2$dl_mu,DAA2$ID)
 
@@ -157,62 +168,86 @@ ck <- compareCluster(list(DAA1=DAA1.gsea,DAA2=DAA2.gsea),
 
 ck_up <- filter(ck,NES>0)
 
+
 mycolors <- c("dodgerblue", "goldenrod1", "grey")
 names(mycolors) <- c("Homeostatic", "DAA1", "unchanged")
 ### Plot C Left -------
-png(file.path(dir,"Figure2","DAA1vsHomeostatic_VolcanoPlot.png" ),
-    width = 3300,height=3300,res=300)
+cairo_pdf(file.path(dir,"Figure3","DAA1vsHomeostatic_VolcanoPlot.pdf" ),
+    width = 15,height=15)
 ggplot(data=DAA1, aes(x=dl_mu, y=-log10(FDR), col=diffexpressed, label=symbol)) + 
-  geom_point(alpha=0.6,size=3.5) + 
+  ggrastr::geom_point_rast(alpha=0.6,size=3.5) + 
   theme_classic()+ geom_text_repel(size=8,data = subset(DAA1, diffexpressed =="DAA1"| diffexpressed=="Homeostatic"),
                                    show.legend = FALSE) +
   scale_colour_manual(values = mycolors) + ggtitle("DAA1 vs Homeostatic")+
-  theme(legend.text = element_text(size=16,face = "bold"),
+  theme(legend.position = "none",
         legend.title = element_text(size=18,face='bold'),
         legend.key.size = unit(1 ,'cm'),
-        axis.title = element_text(size=20,face='bold'),
-        plot.title = element_text(size=24,face='bold',hjust = 0.5)) +
+        axis.title = element_text(size=20),
+        plot.title = element_text(size=24,,hjust = 0.5)) +
   xlab("Avg. LogFoldChange") + ylab(bquote(bold(-log[10](PValue))))
 
 dev.off()
 
 
 ###   Plot C Middle ---------------------------
-labels <- c("Gria2","Grk3","Gpc5","S100b","Aldoc","Gfap","Fau","Selenow","S100a13",
-            "Stmn1","S100a4","Serpina3n","Ftl1","Dbi","Pde7b","Adgrb3","Mir99ahg")
+
+# Define thresholds for labeling outliers
+positive_logFC_thresh <- 0.5  # Threshold for upregulated genes
+negative_logFC_thresh <- -3.0 # Threshold for downregulated genes
+pvalue_thresh <- 0.05         # Common p-value threshold for both groups
+
+# Create a logical vector for labeling outlier points
+DAA2$label <- with(DAA2, 
+                   (dl_mu > positive_logFC_thresh | 
+                      dl_mu < negative_logFC_thresh) & 
+                     PValue < pvalue_thresh)
+
 mycolors <- c("dodgerblue", "red", "grey")
 
 names(mycolors) <- c("Homeostatic", "DAA2", "unchanged")
-png(file.path(dir,"Figure2","DAA2vsHomeostatic_VolcanoPlot.png" ),
-    width = 3300,height=3300,res=300)
+cairo_pdf(file.path(dir,"Figure3","DAA2vsHomeostatic_VolcanoPlot.pdf" ),
+    width = 15,height=15)
 ggplot(data=DAA2, aes(x=dl_mu, y=-log10(FDR), col=diffexpressed, label=symbol)) + 
-  geom_point(alpha=0.6,size=3.5) + 
-  theme_classic()+ geom_text_repel(size=8,data = subset(DAA2, symbol %in% labels),
-                                   show.legend = FALSE) +
+  ggrastr::geom_point_rast(alpha=0.6,size=3.5) + 
+  theme_classic()+ geom_text_repel(size=8,
+                                   data = DAA2[DAA2$label, ],
+                                   show.legend = FALSE,
+                                   box.padding = 0.5,
+                                   max.overlaps = 15,
+                                   point.padding = 0.2,
+                                   min.segment.length = 0.1) +
   scale_colour_manual(values = mycolors) + ggtitle("DAA2 vs Homeostatic")+
-  theme(legend.text = element_text(size=16,face = "bold"),
+  theme(legend.position = "none",
         legend.title = element_text(size=18,face='bold'),
         legend.key.size = unit(1 ,'cm'),
-        axis.title = element_text(size=20,face='bold'),
-        plot.title = element_text(size=24,face='bold',hjust = 0.5)) +
+        axis.title = element_text(size=20),
+        plot.title = element_text(size=24,hjust = 0.5)) +
   xlab("Avg. LogFoldChange") + ylab(bquote(bold(-log[10](PValue))))
 dev.off()
 
 ###  Plot C Right -----------
-png(file.path(dir,"Figure3","DAA1_DAA2vsHomeo_Pathways.png"),
-    res=300,width=1920,height=2640)
-dotplot(ck_up, by="NES") + ggtitle("GO:BP Pathways vs Homeostatic") + 
+
+cairo_pdf(file.path(dir,"Figure3","DAA1_DAA2vsHomeo_Pathways.pdf"),
+          width=6.5,height=10)
+dotplot(ck_up, by="NES")  + 
   theme(axis.title.x = element_text(size = 14,face="bold"),
-        axis.text.x = element_text(angle = 90),
         axis.text.y = element_text(size = 16)) +
-  theme(plot.title = element_text(hjust = 0.5,size=20,face=20))+xlab("Cluster")
+  theme(plot.title = element_text(hjust = 0.5,size=20,face=20))+xlab("")
 
 dev.off()
+
 write.csv(ck@result,file.path(dir,"Figure3","DAAs_vs_HomeoPathways.csv"))
 
 # D LPS Data UMAPS---------------------------------
 ## Recluster LPS Astros =====================================
 lps.data <- readRDS(file.path(dir,"Figure3","LPS_astrocytes.rds"))
+library(scCustomize)
+library(scDblFinder)
+
+sce <- as.SingleCellExperiment(lps.data)
+dbl <- scDblFinder(sce,clusters = sce$seurat_clusters,samples = sce$orig.ident)
+
+
 counts <- GetAssayData(lps.data,layer="counts")
 meta <- lps.data@meta.data
 astros <- CreateSeuratObject(counts = counts,meta.data = meta)
@@ -261,6 +296,12 @@ dev.off()
 
 saveRDS(astros, file.path(dir,"Figure3","ProcessedLPS_astros.rds"))
 # E. LPS Abundance Plot ----------------------------
+astros <- readRDS(file.path(dir,"Figure3","ProcessedLPS_astros.rds"))
+sce <- as.SingleCellExperiment(astros)
+dbl <- scDblFinder(sce,clusters = sce$seurat_clusters,samples = sce$orig.ident)
+astros@meta.data <- as.data.frame(colData(dbl))
+DimPlot(astros,group.by = "scDblFinder.class")
+
 library(edgeR)
 library(RColorBrewer)
 library(viridis)
@@ -332,7 +373,7 @@ color.codes <- hue_pal()(2)
 zone <- levels(factor(df_long$Dose))
 
 ####Plot E ---------
-pdf(file.path(dir,"Figure3","E_AbundancePlot.pdf"),
+cairo_pdf(file.path(dir,"Figure3","E_AbundancePlot.pdf"),
     width=14,height = 4)
 ggplot(df_long, aes(x=Dose, y=Percent,fill=Dose,colour = Dose)) +
   theme_classic() +
@@ -354,23 +395,20 @@ dev.off()
 ## Significant testing ==================
 #Sig test on CLR transformed values
 sig.clusters <- list()
+
 for(cluster in 1:length(levels(factor(astros$seurat_clusters)))){
   clusterName <- paste0("Cluster ",levels(factor(astros$seurat_clusters))[cluster])
-  dataCluster <- df_transformed1[which(df_transformed1$Cluster==clusterName),]
-  res <- kruskal.test(Percent ~ DiseaseLabel, data = dataCluster)
+  dataCluster <- df_transformed[which(df_transformed$Cluster==clusterName),]
+  res <- aov(Percent ~ Dose, data = dataCluster)
   # check if there is any significance
-  if(res$p.value < 0.8/length(levels(factor(data$finalClusters)))){
+  if(summary(res)[[1]][["Pr(>F)"]][1] < 0.05/length(levels(factor(astros$seurat_clusters)))){
     sig.clusters[[clusterName]] <- res
     # do a Welch's t-test to find which specific groups are different
-    res.AD <- wilcox.test(dataCluster$Percent[which(dataCluster$DiseaseLabel=="AD_control")],
-                          dataCluster$Percent[which(dataCluster$DiseaseLabel=="AD")])
-    res.MS <- wilcox.test(dataCluster$Percent[which(dataCluster$DiseaseLabel=="MS_control")],
-                          dataCluster$Percent[which(dataCluster$DiseaseLabel=="MS")])
-    if(res.MS$p.value < 0.9){
-      sig.clusters[[clusterName]][["MS"]] <- res.MS
-    }
-    if(res.AD$p.value < 0.9){
-      sig.clusters[[clusterName]][["AD"]] <- res.AD
+    LPS <- t.test(dataCluster$Percent[which(dataCluster$Dose=="Saline")],
+                          dataCluster$Percent[which(dataCluster$Dose=="LPS")])
+  
+    if(LPS$p.value < 0.05){
+      sig.clusters[[clusterName]][["LPS"]] <- LPS
     }
   }
 }

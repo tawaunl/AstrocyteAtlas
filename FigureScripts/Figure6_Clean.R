@@ -16,7 +16,7 @@ human.MS <- readRDS(file.path(dir,"res_dsl.MS.080124.rds"))
 human.PD <- readRDS(file.path(dir,"res_dsl.PD.072924.rds"))
 
 # Process Data -------------------------
-feat <- as.data.frame(genomitory::getFeatures("GMTY17:GRCh38/GRCh38.IGIS4.0.genes.rds@REVISION-3"))
+feat <- readRDS(file.path(dir,"humanFeatures.rds"))
 
 human.AD <- generatePlotTable(human.AD)
 human.MS <- generatePlotTable(human.MS)

@@ -25,17 +25,28 @@ breaks <- c(0,10,20,30,40,50,Inf) # distance bins
 load(file.path(igfbp5.dir,"data.files.Rdata"))
 
 astro_data <- lapply(astro_data, function(x){
-  x$normch3 <- x$Subcellular..Channel.3..Num.spots.estimated / x$Nucleus..Perimeter 
-  x$normch4 <- x$Subcellular..Channel.4..Num.spots.estimated / x$Nucleus..Perimeter
+  x$normch3 <- x$Subcellular..Channel.3..Num.spots.estimated / x$Nucleus..Area
+  x$normch4 <- x$Subcellular..Channel.4..Num.spots.estimated / x$Nucleus..Area
   x$normastroType <- "DN"
   x$normastroType[x$normch3 >= 1 &
                     x$normch4 <=2.5] <- "DAA1"
   x$normastroType[x$normch3 < 1 &
-                    x$normch4 >= 2 ] <- "DAA2"
+                    x$normch4 >= 2] <- "DAA2"
   x
 })
 
 data <- bind_rows(astro_data, .id = "column_label")
+
+astro_counts <- data %>%
+  group_by(column_label,Genotype, normastroType) %>%
+  tally(name = "Count")
+
+
+ggplot(astro_counts,aes(x=Genotype,y=Count)) + facet_wrap(~normastroType,scales = "free") +
+  geom_boxplot() + geom_point()
+
+
+
 
 ### Plot C ---------------------------------
 png(file.path(dir,"Figure4","Igfbp5_ScatterSubtype.png"),

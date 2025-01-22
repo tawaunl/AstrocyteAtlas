@@ -18,6 +18,9 @@ mouse.AD <- as.data.frame(mouse.AD) %>% dplyr::mutate(diffexpressed=ifelse(dl_mu
 human.AD <- as.data.frame(human.AD) %>% dplyr::mutate(diffexpressed=ifelse(dl_mu>=0.5 & FDR<=0.05 & n_up>= max(n_tested)/2, "up", 
                                                                    ifelse(dl_mu<=-0.5 & FDR<=0.05 & n_down>= max(n_tested)/2, "down", "unchanged")))                                    
 
+AD <- mouse.AD$symbol[which(mouse.AD$diffexpressed=="up")]
+
+
 AD_list <- list("mAD vs Control"=mouse.AD,"hAD vs Control"=human.AD)
 
 
@@ -66,8 +69,8 @@ for(set in 1:length(enrichPaths)){
 
 # A. AD 4 way ----------------------------
 
-png("~/Documents/AstrocytePaper/Figure8/MouseADvsHumanAD_4way.png",
-    width=3000,height=2500,res = 300)
+cairo_pdf("~/Documents/AstrocytePaper/Figure8/MouseADvsHumanAD_4way.pdf",
+    width=13,height = 12)
 plot_4way( human.AD,mouse.AD,  "Human AD","Mouse AD models")
 dev.off()
 
@@ -192,8 +195,8 @@ label <- MS_plot$data |>
   dplyr::filter(Significant == "Significant in Both") |>
   dplyr::pull(symbol)
 ## Plot B ----------
-png("~/Documents/AstrocytePaper/Figure8/MouseMSvsHumanMS.png",
-    width=3000,height=2500,res=300)
+cairo_pdf("~/Documents/AstrocytePaper/Figure8/MouseMSvsHumanMS.pdf",
+    width=13,height=12)
 plot_4way( human.MS,mouse.MS,  "Human MS","Mouse MS models")
 dev.off()
 

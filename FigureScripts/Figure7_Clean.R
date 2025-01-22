@@ -54,6 +54,8 @@ clusters <- readRDS("/gstore/data/omni/neuroscience/AD/Astrocytes_AD_MS_PD_meta/
 
 c2$subcluster_res_0.3 <- clusters$membership
 
+markers <- readRDS("/gstore/data/omni/neuroscience/AD/Astrocytes_AD_MS_PD_meta/AD_MS_PD_cellbender_integration/harmony_integration/another_run_after_removing_high_mito_clusters/subclustering/Cluster2_results/Cluster_2_astrocytes.m.out.harmony_2_donor_groupvar.0.3.rds")
+
 
 library(batchelor)
 library(BiocParallel)

@@ -178,6 +178,20 @@ ggplot(df_long, aes(x=DiseaseLabel, y=Percent,fill=DiseaseLabel,colour = Disease
   scale_color_manual(values=setNames(color.codes, zone))
 dev.off()
 
+### Plot D by model -------------
+ggplot(df_long, aes(x=Model, y=Percent,fill=Model,colour = Model)) + theme_classic() +
+  geom_jitter(color="darkgrey",width = 0.4,size=3,alpha=0.6)  +
+  geom_boxplot(outlier.shape=NA,alpha=0.5) + 
+  facet_wrap(~Cluster,scales = "free",ncol=2) + xlab("Model") +
+  theme(axis.text.y = element_text(size=20)) +
+  ylab("Cellularity Proportion") +  
+  theme(strip.text.x = element_text(size = 20,face = "bold"),
+        axis.title=element_text(size=16,face="bold"),
+        legend.text = element_text(size=14),
+        legend.title = element_text(size=16),
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank()) 
+
 ## Significant testing ==================
 #Sig test on CLR transformed values
 sig.clusters <- list()
