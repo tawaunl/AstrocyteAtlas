@@ -1,6 +1,5 @@
 dir <- "~/Documents/AstrocytePaper"
-sav.dir <- file.path(dir,"Supplemental")
-data<- readRDS(file.path(dir,"Astrocyteintegration_AmbientRemoved_filtered_noneuron.RDS"))
+sav.dir <- file.path(dir,"Supplemental","SuppFig1")
 #A.  4-way plot for Mouse AD and MS --------------------------------------------
 library(gg4way)
 library(ggplot2)
@@ -15,18 +14,10 @@ MS.DE_plot <- generatePlotTable(MS.DE)
 x <- list("ADvsControl"=AD.DE_plot,"MSvsControl"=MS.DE_plot)
 
 ## Plot A ------
-png(file.path(sav.dir,"Mouse_ADvsMS_4wayplot.png"),
-    width=1200,height = 1200,res=150)
-gg4way(DGEdata = x,
-       x = "ADvsControl", FDR = "PValue",
-       y = "MSvsControl", sep = "vs",
-       logFC = "dl_mu",logFCcutoff = 0.25, FDRcutoff = 0.05,
-       label=T,
-       textSize =8,
-       colorVector = c("grey80", "goldenrod1", "red", "mediumblue")) +
-  ggplot2::theme(legend.title = ggplot2::element_text(size = 14),
-                 legend.text = ggplot2::element_text(size = 14),
-                 axis.title = element_text(size=14)) +ggrastr::rasterise(geom_point(size=2))
+
+cairo_pdf(file.path(sav.dir,"Mouse_ADvsMS_4wayplot.pdf"),
+    width=14,height = 12)
+plot_4way(AD.DE_plot,MS.DE_plot,"AD models","MS models",0.25)
 dev.off()
 
 # B. Pathway Analysis -------------------
@@ -130,6 +121,8 @@ write.csv(data,file.path,"AD_MS_sharedPathways")
 
 #C.  Mouse Umaps -------------------------------------
 ## by study --------------------------------
+data<- readRDS(file.path(dir,"Astrocyteintegration_AmbientRemoved_filtered_noneuron.RDS"))
+
 library(gridExtra)
 studies <- unique(data$StudyName)
 list_of_plots <- list()
@@ -138,22 +131,22 @@ for (i in 1:length(studies)) {
   list_of_plots[[i]] <- p
 }
 ### Plot C -----------
-png(file.path(sav.dir ,"Mouse_UMAPS_byStudy.png"),
-    width = 2100, height = 1500)
+cairo_pdf(file.path(sav.dir ,"Mouse_UMAPS_byStudy.pdf"),
+    width = 21, height = 15)
 do.call("grid.arrange", c(list_of_plots, ncol=5))
 dev.off()
 
 ## by Region --------------------------------
 region <- unique(data$BrainRegion)
 list_of_plots <- list()
-for (i in 1:length(studies)) {
+for (i in 1:length(region)) {
   p <- plot_umap_library(data,"BrainRegion",region[i],color = "darkgreen")
   list_of_plots[[i]] <- p
 }
 
 ### Plot D -------------------
-png(file.path(sav.dir ,"Mouse_UMAPS_byRegion.png"),
-    width = 2100, height = 1500)
+cairo_pdf(file.path(sav.dir ,"Mouse_UMAPS_byRegion.pdf"),
+    width = 13, height = 10)
 do.call("grid.arrange", c(list_of_plots, ncol=3))
 dev.off()
 

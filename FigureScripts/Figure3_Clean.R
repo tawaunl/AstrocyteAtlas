@@ -73,14 +73,24 @@ names(mycolors) <- c("DAA2", "DAA1", "unchanged")
 
 labels <- c("Gfap","Id3","Apoe","Clu","Aldoc","Cst3","Aqp4")
 
-res$symbol <- rownames(res)
+# Define thresholds for labeling outliers
+positive_logFC_thresh <- 2  # Threshold for upregulated genes
+negative_logFC_thresh <- -1.5 # Threshold for downregulated genes
+pvalue_thresh <- 1e-28       # Common p-value threshold for both groups
 #### Plot A ----------------
+res <- read.csv(file.path(dir,"Figure3",paste0("DAA1vsDAA2_DEtable.csv")))
+res$label <- with(res, 
+                     ((logFC > positive_logFC_thresh) | 
+                        (FDR < pvalue_thresh) |
+                        (logFC < negative_logFC_thresh ) |
+                        (symbol %in% labels)))
+
 cairo_pdf(file.path(dir,"Figure3","DAA1vsDAA2_VolcanoPlot.pdf" ),
     width = 15,height=15)
 ggplot(data=res, aes(x=logFC, y=-log10(FDR), col=diffexpressed, label=symbol)) + 
   ggrastr::geom_point_rast(alpha=0.6,size=3.5) + 
-  theme_classic()+ geom_text_repel(size=8,data = subset(res, diffexpressed =="DAA1"| diffexpressed=="DAA2"),
-                                   show.legend = FALSE) +
+  theme_classic()+ geom_text_repel(size=11,data = subset(res, label & diffexpressed %in% c("DAA1","DAA2")),
+                                   show.legend = FALSE, point.padding = 2,box.padding =1.2) +
   scale_colour_manual(values = mycolors) + ggtitle("DAA1 vs DAA2")+
   theme(legend.position = "none",
         legend.title = element_text(size=18,face='bold'),
@@ -90,7 +100,7 @@ ggplot(data=res, aes(x=logFC, y=-log10(FDR), col=diffexpressed, label=symbol)) +
   xlab(bquote(log[2]("Fold Change"))) + ylab(bquote(-log[10](PValue)))
 dev.off()
 
-write.csv(res, file.path(dir,"Figure3",paste0("DAA1vsDAA2_DEtable.csv")))
+#write.csv(res, file.path(dir,"Figure3",paste0("DAA1vsDAA2_DEtable.csv")))
 
 # B. Pathways ================================================================
 library(clusterProfiler)
@@ -103,7 +113,6 @@ DAA2.genes <- res$symbol[which(res1$diffexpressed=="DAA2")]
 ck <- compareCluster(list(DAA1=DAA1.genes,DAA2=DAA2.genes),
                      fun = "enrichGO",keyType="SYMBOL",
                      OrgDb = org.Mm.eg.db::org.Mm.eg.db,ont="BP")
-
 
 ####  Plot B ----------- 
 cairo_pdf(file.path(dir,"Figure3",paste0("DAA1vsDAA2_Pathways.pdf")),
@@ -172,35 +181,52 @@ ck_up <- filter(ck,NES>0)
 mycolors <- c("dodgerblue", "goldenrod1", "grey")
 names(mycolors) <- c("Homeostatic", "DAA1", "unchanged")
 ### Plot C Left -------
+positive_logFC_thresh <- 2  # Threshold for upregulated genes
+negative_logFC_thresh <- -1 # Threshold for downregulated genes
+pvalue_thresh <- 1e-28  
+DAA1$label <- with(DAA1, 
+                  ((dl_mu > positive_logFC_thresh) | 
+                     (FDR < pvalue_thresh) |
+                     (dl_mu < negative_logFC_thresh ) |
+                     (symbol %in% labels)))
+
+lfc_max <- max(abs(DAA1$dl_mu),na.rm = T) * 1.1  # Adding 10% for padding
+x_limits <- c(-lfc_max+3, lfc_max)
+
 cairo_pdf(file.path(dir,"Figure3","DAA1vsHomeostatic_VolcanoPlot.pdf" ),
-    width = 15,height=15)
+          width = 15,height=15)
 ggplot(data=DAA1, aes(x=dl_mu, y=-log10(FDR), col=diffexpressed, label=symbol)) + 
   ggrastr::geom_point_rast(alpha=0.6,size=3.5) + 
-  theme_classic()+ geom_text_repel(size=8,data = subset(DAA1, diffexpressed =="DAA1"| diffexpressed=="Homeostatic"),
-                                   show.legend = FALSE) +
+  theme_classic()+ geom_text_repel(size=11,
+                                   data = subset(DAA1,label & diffexpressed %in% c("DAA1","Homeostatic")),
+                                   show.legend = FALSE,
+                                   box.padding = 1,
+                                   max.overlaps = 15,
+                                   point.padding = 1,
+                                   min.segment.length = 0.1) +
   scale_colour_manual(values = mycolors) + ggtitle("DAA1 vs Homeostatic")+
   theme(legend.position = "none",
         legend.title = element_text(size=18,face='bold'),
         legend.key.size = unit(1 ,'cm'),
-        axis.title = element_text(size=20),
-        plot.title = element_text(size=24,,hjust = 0.5)) +
-  xlab("Avg. LogFoldChange") + ylab(bquote(bold(-log[10](PValue))))
-
+        axis.title = element_text(size=24),
+        plot.title = element_text(size=28,hjust = 0.5)) +
+  xlab("Avg. LogFoldChange") + ylab(bquote(bold(-log[10](PValue)))) +
+  scale_x_continuous(limits = x_limits) 
 dev.off()
 
 
 ###   Plot C Middle ---------------------------
 
 # Define thresholds for labeling outliers
-positive_logFC_thresh <- 0.5  # Threshold for upregulated genes
-negative_logFC_thresh <- -3.0 # Threshold for downregulated genes
-pvalue_thresh <- 0.05         # Common p-value threshold for both groups
+positive_logFC_thresh <- 1  # Threshold for upregulated genes
+negative_logFC_thresh <- -3 # Threshold for downregulated genes
+pvalue_thresh <- 1e-60         # Common p-value threshold for both groups
 
 # Create a logical vector for labeling outlier points
 DAA2$label <- with(DAA2, 
                    (dl_mu > positive_logFC_thresh | 
-                      dl_mu < negative_logFC_thresh) & 
-                     PValue < pvalue_thresh)
+                      dl_mu < negative_logFC_thresh) | 
+                     FDR < pvalue_thresh)
 
 mycolors <- c("dodgerblue", "red", "grey")
 
@@ -209,19 +235,19 @@ cairo_pdf(file.path(dir,"Figure3","DAA2vsHomeostatic_VolcanoPlot.pdf" ),
     width = 15,height=15)
 ggplot(data=DAA2, aes(x=dl_mu, y=-log10(FDR), col=diffexpressed, label=symbol)) + 
   ggrastr::geom_point_rast(alpha=0.6,size=3.5) + 
-  theme_classic()+ geom_text_repel(size=8,
-                                   data = DAA2[DAA2$label, ],
+  theme_classic()+ geom_text_repel(size=11,
+                                   data = subset(DAA2,label),
                                    show.legend = FALSE,
-                                   box.padding = 0.5,
+                                   box.padding = 1,
                                    max.overlaps = 15,
-                                   point.padding = 0.2,
+                                   point.padding = 1,
                                    min.segment.length = 0.1) +
   scale_colour_manual(values = mycolors) + ggtitle("DAA2 vs Homeostatic")+
   theme(legend.position = "none",
         legend.title = element_text(size=18,face='bold'),
         legend.key.size = unit(1 ,'cm'),
-        axis.title = element_text(size=20),
-        plot.title = element_text(size=24,hjust = 0.5)) +
+        axis.title = element_text(size=24),
+        plot.title = element_text(size=28,hjust = 0.5)) +
   xlab("Avg. LogFoldChange") + ylab(bquote(bold(-log[10](PValue))))
 dev.off()
 

@@ -8,13 +8,13 @@ library(ggrepel)
 
 
 # Load Data  ----------------------------
-source("~/scHelpers.R")
+source("~/Documents/scHelpers.R")
 dir <- "~/Documents/AstrocytePaper/Human"
 human.AD <- readRDS(file.path(dir,"res_dsl.AD.cain_fixed.072924.rds"))
 
 human.MS <- readRDS(file.path(dir,"res_dsl.MS.080124.rds"))
 human.PD <- readRDS(file.path(dir,"res_dsl.PD.072924.rds"))
-
+fig.dir <- "~/Documents/AstrocytePaper/Figure6"
 # Process Data -------------------------
 feat <- readRDS(file.path(dir,"humanFeatures.rds"))
 
@@ -24,7 +24,7 @@ human.PD <- generatePlotTable(human.PD)
 
 human.AD$diffexpressed <- ifelse(human.AD$FDR<=0.05 & human.AD$dl_mu>=0.5 & human.AD$n_up>=3, "up",
                                  ifelse(human.AD$FDR<=0.05 & human.AD$dl_mu<= -0.5 & human.AD$n_down>=3, "down","unchanged"))
-human.MS$diffexpressed <- ifelse(human.MS$FDR<=0.05 & human.MS$dl_mu>=0.5 & human.MS$n_up>=3, "up",
+human.MS$diffexpressed <- ifelse(human.MS$FDR<=0.05 & human.MS$dl_mu>=0.5 & human.MS$n_up>2, "up",
                                  ifelse(human.MS$FDR<=0.05 & human.MS$dl_mu<= -0.5 & human.MS$n_down>=3, "down","unchanged"))
 human.PD$diffexpressed <- ifelse(human.PD$FDR<=0.05 & human.PD$dl_mu>=0.5 & human.PD$n_up>=2, "up",
                                  ifelse(human.PD$FDR<=0.05 & human.PD$dl_mu<= -0.5 & human.PD$n_down>=2, "down","unchanged"))
@@ -33,53 +33,67 @@ human.AD <- human.AD %>% dplyr::filter(symbol %in% protein_coding$symbol)
 human.MS <- human.MS %>% dplyr::filter(symbol %in% protein_coding$symbol)
 human.PD <- human.PD %>% dplyr::filter(symbol %in% protein_coding$symbol)
 
-
+positive_logFC_thresh <- 1.3 # Threshold for upregulated genes
+negative_logFC_thresh <- -1 # Threshold for downregulated genes
+pvalue_thresh <- 1e-3         
 
 # A. Diseae Volcano Plots ------------------
 ## AD -------------
+genes <- c("CP","SLC5A3","COL27A1","COL8A1","FBXO2","FBXO32","S100A6","MT1F","C3")
+
+human.AD$label <- with(human.AD, 
+                     ((dl_mu > positive_logFC_thresh & PValue <= pvalue_thresh) | 
+                        (dl_mu < negative_logFC_thresh & PValue <= pvalue_thresh) |
+                        symbol %in% genes | (dl_mu > 0.5 & PValue < 1e-10)))
 AD_volcano <- ggplot(data=human.AD, aes(x=dl_mu, y=-log10(PValue), col=diffexpressed, label=symbol)) + 
-  geom_point(alpha=0.6,size=3.5) + 
+  ggrastr::geom_point_rast(alpha=0.6,size=3.5) + 
   theme_classic() +
-  geom_text_repel(data = human.AD[human.AD$diffexpressed %in% c("up","down") &
-                                    abs(human.AD$dl_mu) >= 0.7,],size=6, fontface = "italic",
-                  aes(x=dl_mu,y=-log10(PValue)),show.legend = FALSE,box.padding = 0.5,
-                  max.overlaps = 15) + 
+  geom_text_repel(size=8,data = subset(human.AD,label),show.legend = FALSE,box.padding = 0.5,
+                  max.overlaps = 10) + 
   scale_color_manual(values=c("blue", "grey", "firebrick3"), name = "")+
   theme(legend.position = "none",
-        axis.title = element_text(size=18,face='bold'),
-        plot.title = element_text(size=22,face='bold',hjust = 0.5)) +
+        axis.title = element_text(size=20),
+        plot.title = element_text(size=28,hjust = 0.5)) +
   xlab("Meta-LogFoldChange") + ylab(bquote(bold(-log[10](Meta-PValue))))
 
+
 ## MS ---------------
+human.MS$label <- with(human.MS, 
+                       ((dl_mu > positive_logFC_thresh & PValue <= pvalue_thresh) | 
+                          (dl_mu < -0.8 & PValue <= pvalue_thresh) |
+                          symbol %in% genes | (dl_mu > 0.8 & PValue < 1e-6)))
 MS_volcano <- ggplot(data=human.MS, aes(x=dl_mu, y=-log10(PValue), col=diffexpressed, label=symbol)) + 
-  geom_point(alpha=0.6,size=3.5) + 
+  ggrastr::geom_point_rast(alpha=0.6,size=3.5) + 
   theme_classic() +
-  geom_text_repel(data = human.MS[human.MS$diffexpressed %in% c("up","down") &
-                                    abs(human.MS$dl_mu) >= 0.7,],size=6, fontface = "italic",
-                  aes(x=dl_mu,y=-log10(PValue)),show.legend = FALSE,box.padding = 0.5,
-                  max.overlaps = 15) + 
+  geom_text_repel(size=8,data = subset(human.MS,label & diffexpressed %in% c("up","down")),show.legend = FALSE,box.padding = 0.5,
+                  max.overlaps = 10) + 
   scale_color_manual(values=c("blue", "grey", "firebrick3"), name = "")+
   theme(legend.position = "none",
-        axis.title = element_text(size=18,face='bold'),
-        plot.title = element_text(size=22,face='bold',hjust = 0.5)) +
+        axis.title = element_text(size=20),
+        plot.title = element_text(size=28,hjust = 0.5)) +
   xlab("Meta-LogFoldChange") + ylab(bquote(bold(-log[10](Meta-PValue))))
 
 ## PD ---------------
+pvalue_thresh <- 1e-5
+human.PD$label <- with(human.PD, 
+                       ((dl_mu > positive_logFC_thresh & PValue <= pvalue_thresh) | 
+                          (dl_mu < negative_logFC_thresh & PValue <= pvalue_thresh) |
+                          symbol %in% genes | (abs(dl_mu) > 0.8 & PValue < 1e-6)))
 PD_volcano <- ggplot(data=human.PD, aes(x=dl_mu, y=-log10(PValue), col=diffexpressed, label=symbol)) + 
-  geom_point(alpha=0.6,size=3.5) + 
+  ggrastr::geom_point_rast(alpha=0.6,size=3.5) + 
   theme_classic() +
-  geom_text_repel(data = human.PD[human.PD$diffexpressed %in% c("up","down") &
-                                    abs(human.PD$dl_mu) >= 0.7,],size=6, fontface = "italic",
-                  aes(x=dl_mu,y=-log10(PValue)),show.legend = FALSE,box.padding = 0.5,
+  geom_text_repel(size=8,
+                  data = subset(human.PD,label & diffexpressed %in% c("up","down")),
+                  show.legend = FALSE, box.padding = 0.5,
                   max.overlaps = 15) + 
   scale_color_manual(values=c("blue", "grey", "firebrick3"), name = "")+
   theme(legend.position = "none",
-        axis.title = element_text(size=18,face='bold'),
-        plot.title = element_text(size=22,face='bold',hjust = 0.5)) +
+        axis.title = element_text(size=20),
+        plot.title = element_text(size=28,hjust = 0.5)) +
   xlab("Meta-LogFoldChange") + ylab(bquote(bold(-log[10](Meta-PValue))))
 ### Plot A --------------------
-png(file.path(dir,"Figure6","A_VolcanoPlots.png"),
-    width = 3000,height = 1000,res=300)
+cairo_pdf(file.path(fig.dir,"A_VolcanoPlots.pdf"),
+    width = 30,height = 10)
 cowplot::plot_grid(AD_volcano,MS_volcano,PD_volcano,ncol=3) 
 dev.off()
 
@@ -129,7 +143,7 @@ p_AD_up_score_by_study <- ggplot(coldata_se_agg,
   xlab("") +
   theme(axis.text.x = element_blank(), axis.ticks = element_blank())
 ### Plot AD ----------
-pdf(file.path(dir,"Human_AD_DEG_up_score_per_study.pdf"))
+pdf(file.path(fig.dir,"Human_AD_DEG_up_score_per_study.pdf"))
 p_AD_up_score_by_study
 dev.off()
 
@@ -160,7 +174,7 @@ p_MS_up_score_by_study <- ggplot(coldata_se_agg,
   theme(axis.text.x = element_blank(), axis.ticks = element_blank())
 
 ### Plot MS ----------------
-pdf(file.path(dir,"Figure6","Human_MS_DEG_up_score_per_study.pdf"))
+pdf(file.path(fig.dir,"Figure6","Human_MS_DEG_up_score_per_study.pdf"))
 p_MS_up_score_by_study
 dev.off()
 
@@ -190,7 +204,7 @@ p_PD_up_score_by_study <- ggplot(coldata_se_agg,
   xlab("") +
   theme(axis.text.x = element_blank(), axis.ticks = element_blank())
 ###Plot PD -------------
-pdf(file.path(dir,"Figure6","Human_PD_DEG_up_score_per_study.pdf"))
+pdf(file.path(fig.dir,"Human_PD_DEG_up_score_per_study.pdf"))
 p_PD_up_score_by_study
 dev.off()
 
@@ -294,7 +308,7 @@ go_down <- dotplot(ck2, by="NES") + ggtitle("GO Pathways Downregulated") +
   theme(plot.title = element_text(hjust = 0.5,size=20,face=20))+xlab("Disease")
 
 ###Plot C ---------------------
-pdf(file.path(dir,"Figure6","DiseasePathwasyDotPlot.pdf"))
+pdf(file.path(fig.dir,"DiseasePathwasyDotPlot.pdf"))
 cowplot::plot_grid(go_up,go_down,align = "v",ncol= 2)
 dev.off()
 
@@ -355,7 +369,7 @@ color.codes <- c("darkgreen","darkgreen","purple","purple","mediumblue","mediumb
 zone <- levels(factor(df_long$diagnosis_harmonized_by_disease))
 
 ###Plot D -----------------------------
-png(file.path(dir,"Figure6","Human_CellularityPlot_with_percentages.png"),
+png(file.path(fig.dir,"Human_CellularityPlot_with_percentages.png"),
     width = 6000,height=1400,res=300)
 ggplot(df_long, aes(x=diagnosis_harmonized_by_disease, y=value,fill=diagnosis_harmonized_by_disease,colour = diagnosis_harmonized_by_disease)) +
   theme_classic() +
