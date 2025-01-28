@@ -150,33 +150,40 @@ DAA2$diffexpressed[DAA2$dl_mu   <= -0.5 &
                      DAA2$PValue <= 0.05 &
                      DAA2$sig   == "yes" ] <- "Homeostatic"
 
-## Pathways ----------## PDAA1athways ----------
+## Pathways --------------------
 DAA1.gsea <- setNames(DAA1$dl_mu,DAA1$ID)
 DAA2.gsea <- setNames(DAA2$dl_mu,DAA2$ID)
 
-gene.df <- bitr( names(DAA1.gsea), fromType = "ENSEMBL",
-                 toType = c("SYMBOL", "ENTREZID"),
-                 OrgDb = org.Mm.eg.db::org.Mm.eg.db)
-x <- match(gene.df$ENSEMBL,names(DAA1.gsea))
-DAA1.gsea <- DAA1.gsea[x]
-names(DAA1.gsea)<- gene.df$ENTREZID
-DAA1.gsea <- DAA1.gsea[complete.cases(DAA1.gsea)]
-
-gene.df <- bitr( names(DAA2.gsea), fromType = "ENSEMBL",
-                 toType = c("SYMBOL", "ENTREZID"),
-                 OrgDb = org.Mm.eg.db::org.Mm.eg.db)
-x <- match(gene.df$ENSEMBL,names(DAA2.gsea))
-DAA2.gsea <- DAA2.gsea[x]
-names(DAA2.gsea)<- gene.df$ENTREZID
-DAA2.gsea <- DAA2.gsea[complete.cases(DAA2.gsea)]
 
 DAA1.gsea <- DAA1.gsea[order(DAA1.gsea,decreasing = T)]
 DAA2.gsea <- DAA2.gsea[order(DAA2.gsea,decreasing = T)]
 ck <- compareCluster(list(DAA1=DAA1.gsea,DAA2=DAA2.gsea),
                      fun = "gseGO",OrgDb = org.Mm.eg.db::org.Mm.eg.db,ont="BP",eps=0)
 
-ck_up <- filter(ck,NES>0)
 
+DAA1.gsea <- DAA1.gsea[complete.cases(DAA1.gsea)]
+DAA2.gsea <- DAA2.gsea[complete.cases(DAA2.gsea)]
+
+D1 <- gseGO(DAA1.gsea,OrgDb = org.Mm.eg.db::org.Mm.eg.db,ont="BP",eps=0,keyType = "ENSEMBL")
+D2 <- gseGO(DAA2.gsea,OrgDb = org.Mm.eg.db::org.Mm.eg.db,ont="BP",eps=0,keyType = "ENSEMBL")
+
+go_DAA1 <- dotplot(D1, x="NES",showCategory=5) +
+  ggtitle(str_wrap("GO:BP Pathways Enriched in DAA1 vs Homeo",width=30)) + 
+  theme(axis.title.x = element_text(size = 20),
+        axis.text.x = element_text(size=12)) +
+  theme(plot.title = element_text(hjust = 0.5,size=20,face=24))
+D2 <- filter(D2, NES>0)
+go_DAA2 <- dotplot(D2, x="NES",showCategory=5) +
+  ggtitle(str_wrap("GO:BP Pathways Enriched in DAA2 vs Homeo.",width=30)) + 
+  theme(axis.title.x = element_text(size = 20),
+        axis.text.x = element_text(size=10)) +
+  theme(plot.title = element_text(hjust = 0.5,size=20,face=24))
+
+
+cairo_pdf("~/Documents/AstrocytePaper/Figure3/indvPAthwaysHOMEO_DAA1vsDAA2.pdf",
+          width=11,height=5)
+go_DAA1+go_DAA2
+dev.off()
 
 mycolors <- c("dodgerblue", "goldenrod1", "grey")
 names(mycolors) <- c("Homeostatic", "DAA1", "unchanged")

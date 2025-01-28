@@ -1,0 +1,359 @@
+---
+title: Differential expression analysis of gene count data with `voom` and _limma_
+author:
+- name: tawaunl
+  email: tawaunl@gmail.com
+date: "`r Sys.Date()`"
+output:
+  BiocStyle::html_document:
+    toc_float: yes
+    titlecaps: false 
+  md_document:
+    preserve_yaml: yes
+# memory in MB, time in minutes
+compilation:
+  module: R/prd
+---
+
+```{r, results='hide', echo=FALSE}
+knitr::opts_chunk$set(error=FALSE, message=FALSE, cache=FALSE)
+metacommons::clearOrigins()
+metacommons::clearFeatureNames()
+metacommons::clearSampleNames()
+library(BiocStyle)
+```
+
+```{r generator, echo=FALSE, eval=FALSE}
+runVoom(se = summed, groups = "Disease", comparisons = list(c("AD", 
+    "AD_control")), subset.factor = "StudyName", subset.levels = c(study), 
+    commit = "never")
+```
+
+# Setting up
+
+This analysis will use the `voom` function from `r Biocpkg('limma')` for a differential expression analysis of gene count data.
+We start from our `SummarizedExperiment` object, which contains all experimental data and metadata for this study.
+Each row corresponds to a gene while each column corresponds to a sample.
+
+```{r data-loading} 
+library(SummarizedExperiment)
+se <- local({ # gp.sa.core tag... feel free to delete me (1)
+    stop("need commands to generate the SingleCellExperiment 'se'")
+})
+se
+```
+
+We also make a copy of the original `SummarizedExperiment`, in case we modify `se` and we need the original later on.
+
+```{r}
+original <- se
+```
+
+We generate a `DGEList` object in preparation for analysis.
+We record the original row index to make it easier to track rows after filtering.
+
+```{r}
+library(edgeR)
+y <- DGEList(assay(se, 1))
+y$genes <- data.frame(origin=seq_len(nrow(se)))
+```
+
+Finally, we load _gp.sa.diff_ into the current session to make use of its utilities.
+
+```{r}
+library(gp.sa.diff)
+```
+
+# Creating the design matrix
+
+## Initial configuration
+
+We define the subset of samples that are of interest for this analysis.
+(We will later store the `subset.info` variable in the metadata of the results to keep track of what subsetting was performed.)
+
+```{r}
+subset.factor <- "StudyName"
+subset.levels <- "Colonna 5XFAD"
+samp.keep <- SummarizedExperiment::colData(se)[[subset.factor]] %in% subset.levels
+subset.info <- paste(paste(subset.factor, '==', subset.levels), collapse=' || ')
+summary(samp.keep)
+```
+
+We subset the various data containers.
+
+```{r}
+se <- se[,samp.keep]
+y <- y[,samp.keep]
+```
+
+We then construct a design matrix that reflects the experimental design for this sample subset.
+
+```{r}
+design <- gp.sa.deux::model.matrix2(data=SummarizedExperiment::colData(se), groups="Disease")
+colnames(design)
+```
+
+## Selecting used samples
+
+We identify the subset of samples that are involved in our contrasts of interest.
+A sample is considered to be "involved" if it affects any of the log-fold changes for a particular contrast.
+Effects on the variance estimate are ignored.
+
+```{r}
+samp.keep <- logical(ncol(se))
+
+# Difference between `AD` vs `AD_control`
+con <- gp.sa.deux::formatComparison(c("DiseaseAD", "DiseaseAD_control"), design=design)
+samp.keep <- samp.keep | gp.sa.deux::findUsedSamples(design, con)
+
+summary(samp.keep)
+```
+
+We subset the various data containers to only use the samples of interest.
+This reduces the susceptibility of the analysis to gross differences in variance between samples,
+especially when such differences in variance are unnecessary; 
+the affected samples are not involved in any contrast of interest.
+
+```{r}
+se <- se[,samp.keep]
+y <- y[,samp.keep]
+```
+
+We then construct a design matrix that reflects the experimental design for this sample subset.
+
+```{r}
+design <- gp.sa.deux::model.matrix2(data=SummarizedExperiment::colData(se), groups="Disease")
+colnames(design)
+```
+
+# Gene filtering 
+
+Low-abundance genes are filtered out as they are generally uninteresting.
+This reduces computational work, improves the accuracy of the mean-variance trend fitting,
+and increases statistical power by reducing the severity of the multiple testing correction.
+
+```{r}
+filtered <- filterByExpr(y, design=design, large.n=0)
+summary(filtered)
+```
+
+In this case, we use `r Biocpkg("edgeR")`'s default filtering strategy,
+which only retains genes with coverage above a threshold in at least $n$ samples.
+The minimum threshold is defined as a CPM equivalent to a count of 10 (adjusted for differences in library size)
+while $n$ is determined from the smallest group in the experimental design.
+
+```{r}
+y <- y[filtered,]
+```
+
+# Normalization
+
+We then perform trimmed mean of M-values (TMM) normalization.
+The assumption is that most genes not exhibit any differences between samples; 
+thus, any systematic differences across many genes are technical and should be removed.
+
+```{r}
+y <- calcNormFactors(y)
+head(y$samples, 10)
+```
+
+In particular, the TMM normalization factors account for composition biases where upregulated genes outcompete others for sequencing resources.
+This ensures that the log-fold changes are accurately computed in the presence of strong (unbalanced) differential expression.
+
+```{r}
+barplot(y$samples$norm.factors)
+```
+
+We examine the performance of normalization by creating MD (mean-difference) plots.
+In each plot, the bulk of genes should have a log-fold change of zero between samples if normalization was successful.
+
+```{r, fig.wide=TRUE, fig.asp=1/3}
+lcpm <- cpm(y, log=TRUE, prior.count=3)
+n <- ncol(lcpm)
+par(mfrow=c(1, 3), mar=c(5.1, 4.1, 4.1, 0.1))
+for (i in seq_len(n)) {
+    plotMD(lcpm, column=i)
+    abline(h=0, col='red', lty=2)
+}
+```
+
+# Dimensionality reduction
+
+We create a MDS plot to visualize the differences between samples.
+For each pair of samples, the distance between them is defined as the root-mean-square log-fold change across the top genes with the largest absolute log-fold changes between those samples.
+Samples that are closer together on the plot are thus more similar.
+
+```{r}
+# Manufacturing labels from the design matrix.
+is.intercept <- colMeans(design==1)==1
+design0 <- design[,!is.intercept,drop=FALSE]
+labels <- apply(design0, 1, function(x) {
+    keep <- x!=0 
+    paste(collapse='.', colnames(design0)[keep])
+})
+
+lcpm <- cpm(y, log=TRUE, prior.count=3)
+plotMDS(lcpm, labels=labels, col=as.integer(factor(labels)))
+```
+
+# Creating a processed data container
+
+We create a `SummarizedExperiment` that contains the details of the processing prior to the differential analysis.
+This is particularly useful for downstream steps that need to visualize the normalized expression values.
+
+```{r make-processed-se}
+# Standardizing the class to a RangedSummarizedExperiment. 
+processed.se <- as(se, 'RangedSummarizedExperiment')
+
+# Adding the filtering information:
+rowData(processed.se)$in.use <- seq_len(nrow(processed.se)) %in% y$genes$origin
+
+# Adding the normalization information:
+processed.se$lib.size <- y$samples$lib.size
+processed.se$norm.factors <- y$samples$norm.factors
+assay(processed.se, "logCPM") <- normalizedCPM(assay(se, 1), lib.size=processed.se$lib.size, 
+    norm.factors=processed.se$norm.factors, offset=y$offset)
+
+# Adding some metadata:
+trackinfo(processed.se) <- list(description='A SummarizedExperiment containing processed bulk RNA-seq data.')
+processed.se
+```
+# Fitting the linear model
+
+## Estimating observation weights 
+
+We use the `voomWithQualityWeights` function to model the mean-variance trend in the log-CPMs across genes.
+Each observation receives a weight that is inversely proportional to the value of the trend at the fitted value for that observation.
+In this manner, log-CPMs derived from low counts (e.g., due to less sequencing or downregulation) are downweighted to reflect the reduced availability of information.
+We estimate sample-specific quality weights to reduce the impact of highly variable samples (e.g., outlier replicates) without resorting to their removal.
+
+```{r voom}
+library(limma)
+v <- voomWithQualityWeights(y, design=design, plot=TRUE)
+```
+
+## Empirical Bayes shrinkage of variances
+
+We use `lmFit` to fit the linear model to the log-CPMs for each gene.
+(Note that `design` is implicitly passed via `v`.)
+This is followed by `eBayes` to perform empirical Bayes shrinkage, sharing information across genes to stabilize variance estimates.
+We also set `robust=TRUE` to ensure that highly variable genes (or very small variances at discrete counts) do not deflate the prior degrees of freedom (d.f.) estimate.
+We should not observe any trend in the plot below as the observation weighting should have already eliminated any mean-variance relationship.
+
+```{r linear-model, fig.cap="The residual standard deviation (sigma) as a function of the mean log-CPM. Each point represents a gene with outlier variances marked in red."}
+fit <- lmFit(v)
+fit <- eBayes(fit, robust=TRUE)
+plotSA(fit)
+```
+
+The estimated prior d.f. serves as a measure of the variability of the variances across features. 
+Large values indicate that the variances were consistent across features, allowing greater shrinkage to improve power in downstream analyses.
+For example, most RNA-seq experiments will have prior d.f. of 5-20.
+
+```{r}
+summary(fit$df.prior)
+```
+# Performing contrasts
+
+## Setup 
+
+We set up a `List` to hold all of our output results.
+
+```{r}
+library(gp.sa.diff)
+all.results <- List()
+```
+
+## Difference between `AD` vs `AD_control`
+
+We set up the contrast, a vector specifying the null hypothesis in terms of the design matrix's coefficients.
+(This may also be a matrix where the joint null is defined from the hypotheses for the individual columns.)
+
+```{r}
+con <- gp.sa.deux::formatComparison(c("DiseaseAD", "DiseaseAD_control"), design=design)
+con
+```
+
+We reorganize the model so that the contrast is represented by its own coefficients: 
+
+```{r}
+fit2 <- contrasts.fit(fit, enforceContrastColnames(con))
+```
+
+And repeat the empirical Bayes shrinkage with the reorganized model.
+
+```{r, eval=isSoloContrast(con)}
+fit2 <- eBayes(fit2, robust=TRUE)
+```
+
+```{r, eval=!isSoloContrast(con)}
+fit2 <- eBayes(fit2, robust=TRUE)
+```
+
+Retrieving the statistics:
+
+```{r}
+res <- topTable(fit2, n=Inf, sort.by="none")
+res <- cleanDataFrame(res, se, contrast=con, drop.fields="origin",
+    subset=res$origin)
+head(res[order(res$PValue),])
+```
+
+We report summary statistics for this comparison, defining significant differences at a FDR threshold of 5%.
+
+```{r, eval=isSoloContrast(con)}
+summary(decideTests(fit2))
+```
+
+```{r, eval=!isSoloContrast(con)}
+summary(res$FDR <= 0.05)
+```
+
+```{r ma-Difference.between..AD..vs..AD_control., fig.cap='A mean-difference plot for this contrast. Each point represents a gene and is colored according to whether it was significantly up- or down-regulated at an FDR of 5%. We expect that the cloud of points in the MD plot is centred around zero, with a typical "trumpet" shape due to increased variability at low abundances.', eval=isSoloContrast(con)}
+plotMD(fit2, status=decideTests(fit2), hl.cex=0.5)
+```
+
+```{r volcano-Difference.between..AD..vs..AD_control., fig.cap='A volcano plot for this contrast. Each point represents a gene and a line is drawn at the effective $p$-value threshold for significance at an FDR of 5%. Points with larger log-fold changes should generally have lower $p$-values, though this is dependent on the variance.', eval=isSoloContrast(con)}
+volcanoplot(fit2)
+is.de <- res$FDR <= 0.05
+if (any(is.de, na.rm=TRUE)) {
+    eff.thresh <- max(res$PValue[is.de], na.rm=TRUE)
+    abline(h=-log10(eff.thresh), lty=2, col='red')
+}
+```
+
+We save the results in our output `List` for later use,
+recording the contrast that we used along with a human-readable description of the comparison.
+
+```{r}
+all.results[["Difference between `AD` vs `AD_control`"]] <- DGEStatFrame(
+    res, design=design, contrast=con,
+    description="Difference between `AD` vs `AD_control`", 
+    subset=subset.info, method="voom"
+)
+```
+
+# Saving all results
+
+We create a directory to dump results into.
+
+```{r}
+### DO NOT REMOVE ###
+library(gp.sa.core)
+createResultDir()
+```
+
+We then save all results of interest to the specified files within this directory.
+
+```{r}
+saveResult(processed.se, "processed.se")
+for (i in seq_along(all.results)) {
+    saveResult(all.results[[i]], paste0("all.results", '-', i))
+}
+```
+
+# Session information {-}
+
+```{r}
+sessionInfo()
+```
