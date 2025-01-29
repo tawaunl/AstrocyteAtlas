@@ -312,6 +312,38 @@ pdf(file.path(fig.dir,"DiseasePathwasyDotPlot.pdf"))
 cowplot::plot_grid(go_up,go_down,align = "v",ncol= 2)
 dev.off()
 
+### Split paths -------------
+
+#### Up ---------
+AD <- filter(DiseasePaths$AD_GSEAGO, NES >0)
+AD <- filter(AD, ONTOLOGY == "BP")
+AD <- dotplot(AD, x="NES",showCategory=5) +
+  ggtitle(str_wrap("GO Pathways Enriched in AD vs Control",width=25)) + 
+  theme(axis.title.x = element_text(size = 20),
+        axis.text.x = element_text(size=12)) +
+  theme(plot.title = element_text(hjust = 0.5,size=20,face=24))
+
+MS <- filter(DiseasePaths$MS_GSEAGO, NES>0)
+MS <- filter(MS,ONTOLOGY == "BP")
+MS <- dotplot(MS, x="NES",showCategory=5) +
+  ggtitle(str_wrap("GO:BP Pathways Enriched in MS vs Control",width=25)) + 
+  theme(axis.title.x = element_text(size = 20),
+        axis.text.x = element_text(size=10)) +
+  theme(plot.title = element_text(hjust = 0.5,size=20,face=24))
+
+PD <- filter(DiseasePaths$PD_GSEAGO, NES>0)
+PD <- filter(PD,ONTOLOGY == "BP")
+PD <- dotplot(PD, x="NES",showCategory=5) +
+  ggtitle(str_wrap("GO:BP Pathways Enriched in PD vs Control",width=25)) + 
+  theme(axis.title.x = element_text(size = 20),
+        axis.text.x = element_text(size=10)) +
+  theme(plot.title = element_text(hjust = 0.5,size=20,face=24))
+
+cairo_pdf("~/Documents/AstrocytePaper/Figure6/indvPAthwaysUP.pdf",
+          width=16,height=5)
+AD+MS+PD
+dev.off()
+
 #D. Abundance Plot -------------------------------
 library(edgeR)
 library(RColorBrewer)

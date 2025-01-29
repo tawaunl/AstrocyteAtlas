@@ -14,14 +14,14 @@ pvalue_thresh <- 0.05         # Common p-value threshold for both groups
 tolabel <- c("C4b","Serpina3n","Gfap")
 # Create a logical vector for labeling outlier points
 lps.de$label <- with(lps.de, 
-                   ((logFC > positive_logFC_thresh & PValue < pvalue_thresh) | 
-                      (logFC < negative_logFC_thresh & PValue < pvalue_thresh) |
-                      symbol %in% tolabel))
+                     ((logFC > positive_logFC_thresh & PValue < pvalue_thresh) | 
+                        (logFC < negative_logFC_thresh & PValue < pvalue_thresh) |
+                        symbol %in% tolabel))
 lfc_max <- max(abs(lps.de$logFC)) * 1.1  # Adding 10% for padding
 x_limits <- c(-lfc_max, lfc_max)
 
 cairo_pdf(file.path(dir,"LPSvsSaline_VolcanoPlot.pdf" ),
-    width = 16,height=12,)
+          width = 16,height=12,)
 ggplot(data=lps.de, aes(x=logFC, y=-log10(FDR), col=diffexpressed, label=symbol)) + 
   ggrastr::geom_point_rast(alpha=0.6,size=3.5) + 
   theme_classic()+ geom_text_repel(size=6,data = subset(lps.de, label),
@@ -149,10 +149,10 @@ load(file.path(igfbp5.dir,"data.files.Rdata"))
 astro_data <- lapply(astro_data, function(x){
   x$normch3 <- x$Subcellular..Channel.3..Num.spots.estimated / x$Nucleus..Area
   x$normch4 <- x$Subcellular..Channel.4..Num.spots.estimated / x$Nucleus..Area
-  x$normastroType <- "Other As"
+  x$normastroType <- "Other Astros"
   x$normastroType[x$normch3 >= 1 &
                     x$normch4 <=2.5] <- "DAA1"
-  x$normastroType[x$normch3 < 1 &
+  x$normastroType[x$normch3 < 2 &
                     x$normch4 >= 2] <- "DAA2"
   x
 })
@@ -162,21 +162,57 @@ astro_counts <- data %>%
   group_by(column_label,Genotype, normastroType) %>%
   tally(name = "Count")
 
+total_astrocytes_per_genotype <- astro_counts %>%
+  group_by(Genotype) %>%
+  summarize(total_astrocytes = sum(Count), .groups = 'drop')
 
+# Join the total astrocytes per genotype to the original dataframe
+df_with_totals <- astro_counts %>%
+  left_join(total_astrocytes_per_genotype, by = "Genotype")
 
+# Calculate the proportion of each astrocyte subtype to the total within each genotype
+df_ratios <- df_with_totals %>%
+  mutate(proportion_to_total_astrocytes = Count / total_astrocytes)
 
 ## Plot C ---------
 color.codes <- c("goldenrod1","red","black")
 zone <- levels(factor(astro_counts$normastroType))
 cairo_pdf("~/Documents/AstrocytePaper/Supplemental/SuppFig3/AstrocyteCount.pdf",
-          height = 10,width=15)
+          height = 10,width=10)
 ggplot(astro_counts,aes(x=Genotype,y=Count)) + facet_wrap(~normastroType,scales = "free") +
-  geom_boxplot(aes(fill=normastroType)) + geom_point(aes(color=column_label)) +
+  geom_boxplot(aes(fill=normastroType),width=0.5) + geom_point(aes(color=column_label)) +
   scale_fill_manual(values=setNames(color.codes, zone)) +theme_pubclean() +
   ggtitle("Normalized Astrocyte Count")+ 
   theme(legend.position="right",
         plot.title = element_text(hjust = 0.5,size=20),
         axis.title.x = element_blank())
+dev.off()
+cairo_pdf("~/Documents/AstrocytePaper/Supplemental/SuppFig3/AstrocyteCount_proportion.pdf",
+          width = 5,height = 8)
+ggplot(df_ratios,aes(fill = normastroType,y=proportion_to_total_astrocytes,x=Genotype))+
+  geom_bar(position="stack", stat="identity",width=0.5) +
+  scale_fill_manual(values=setNames(color.codes, zone)) +theme_pubclean() +
+  ggtitle("Igfbp5")+theme(legend.position="right") 
+dev.off()
+## Gene expression ----------
+astro <- bind_rows(astro_data, .id = "column_label")
+df_long <- astro %>%
+  pivot_longer(cols = c(normch3, normch4),
+               names_to = "gene",
+               values_to = "expression")
+plot <- df_long %>%
+  group_by(column_label,Genotype, gene) %>%
+  summarize(mean_expression = mean(expression), .groups = 'drop')
+
+
+cairo_pdf("~/Documents/AstrocytePaper/Supplemental/SuppFig3/GeneExpression.pdf")
+ggplot(plot, aes(x =Genotype, y = mean_expression, fill = Genotype)) +
+  geom_boxplot(width=0.5) + geom_point(size=2)+
+facet_wrap(~ gene, scales = "free") +
+  theme_minimal() +
+  labs(title = "Boxplot of Gene Expressions with Averages",
+       x = "Genotype",
+       y = "Expression")
 dev.off()
 
 # D. S100a6 -------
