@@ -70,7 +70,7 @@ for(set in 1:length(enrichPaths)){
 # A. AD 4 way ----------------------------
 
 cairo_pdf("~/Documents/AstrocytePaper/Figure8/MouseADvsHumanAD_4way.pdf",
-    width=13,height = 12)
+    width=15,height = 12)
 plot_4way( human.AD,mouse.AD,  "Human AD","Mouse AD models")
 dev.off()
 
@@ -196,7 +196,7 @@ label <- MS_plot$data |>
   dplyr::pull(symbol)
 ## Plot B ----------
 cairo_pdf("~/Documents/AstrocytePaper/Figure8/MouseMSvsHumanMS.pdf",
-    width=13,height=12)
+    width=15,height=12)
 plot_4way( human.MS,mouse.MS,  "Human MS","Mouse MS models")
 dev.off()
 

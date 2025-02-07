@@ -288,7 +288,7 @@ PD.paths <- gseGO(geneList     = PD.gsea,
 ##Save Pathways--------
 DiseasePaths <- list(AD_GSEAGO=AD.paths ,MS_GSEAGO =MS.paths,PD_GSEAGO=PD.paths)
 saveRDS(DiseasePaths,file.path(dir,"HumanDiseasePathwaysGO.rds"))
-
+DiseasePaths <- readRDS(file.path(dir,"HumanDiseasePathwaysGO.rds"))
 
 ## Grouped Pathways =================================
 ck <- compareCluster(list(AD=AD.gsea,MS=MS.gsea,PD=PD.gsea),
