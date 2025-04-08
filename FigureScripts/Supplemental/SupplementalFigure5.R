@@ -116,26 +116,19 @@ ck.GO <- compareCluster(geneClusters = gcSample, fun = "gseGO",nPermSimple = 100
 dir <- "~/Documents/AstrocytePaper"
 data<- readRDS(file.path(dir,"Astrocyteintegration_AmbientRemoved_filtered_noneuron.RDS"))
 
-sav.dir <- "~/Documents/AstrocytePaper/Supplemental/SuppFigure6"
+sav.dir <- "~/Documents/AstrocytePaper/Supplemental/SuppFigure5"
 snapA <- readRDS("~/Documents/AstrocytePaper/Snap-aProgram.rds")
 
-counts <- GetAssayData(data,assay = "RNA",
-                       layer = "counts")
-counts <- round(counts)
-counts <- counts[-which(rowMeans(counts)==0),]
-se <- SingleCellExperiment::SingleCellExperiment(list(counts=counts))
-colData(se) <- DataFrame(data@meta.data)
 
-library(batchelor)
-out_gfap <- multiBatchNorm(se, normalize.all = TRUE, batch = se$StudyName)
-
-score_intersect <- intersect(snapA,rownames(data))
-scores_by_cell <- colMeans(
-  GetAssayData(data,assay = "RNA",
-               layer = "data")[score_intersect,],na.rm = TRUE)
-data[["SnapAProgram"]] <- scores_by_cell
-
-scvi_coords <- get_scvi_coords(data,data$finalClusters)
+data <- AddModuleScore(data,features = list(snapA),name="SnapA")
+cairo_pdf(file.path(sav.dir,"MouseSnap.pdf"))
+ggplot(data@meta.data ,aes(x=finalClusters,y=SnapA1,fill=finalClusters)) +
+  stat_boxplot(aes(fill=finalClusters)) + ggtitle("SNAP-A Gene Set")+
+  scale_fill_manual(values=setNames(color.codes, zone))  +theme_pubclean()+
+  theme(legend.position = "none",
+        plot.title = element_text(hjust = 0.5,size=24))
+dev.off()
+scvi_coords <- get_scvi_coords(out_gfap,out_gfap$finalClusters)
 colnames(scvi_coords) <- make.unique(colnames(scvi_coords))
 text <- data$finalClusters
 text_x <- vapply(split(scvi_coords$UMAP1, text), median, FUN.VALUE=0)
@@ -152,6 +145,55 @@ ggplot(scvi_coords%>%
         legend.title =element_text(size=14),
         legend.key.size = unit(1.5, 'cm')) + ggtitle("SNAP-A Program")+
   scale_colour_gradientn(colours =  RColorBrewer::brewer.pal(5,"Purples"))
+dev.off()
+
+# Ast10 --------------
+
+library(stringr)
+Ast10 <- readRDS("~/Documents/AstrocytePaper/Ast10_program.rds")
+Ast10 <- str_to_title(Ast10)
+Ast10[7] <- "Mt2"
+Ast10[13] <- "Mt1"
+Ast10[42] <- "Samd4"
+sub <- Ast10[1:15]
+#Ast10 <- c("Mt1","Mt2")
+
+data <- AddModuleScore(data,features = list(sub),name = "Ast10_")
+score_intersect <- intersect(sub,rownames(out_gfap))
+out_gfap$Ast10 <- colMeans(
+  GetAssayData(out_gfap,assay = "originalexp",
+               layer = "data")[score_intersect,],na.rm = TRUE)
+data[["Ast10Program"]] <- scores_by_cell
+
+scvi_coords <- get_scvi_coords(data,data$finalClusters)
+colnames(scvi_coords) <- make.unique(colnames(scvi_coords))
+text <- data$finalClusters
+text_x <- vapply(split(scvi_coords$UMAP1, text), median, FUN.VALUE=0)
+text_y <- vapply(split(scvi_coords$UMAP2, text), median, FUN.VALUE=0)
+## Plot C -----------------------
+cairo_pdf(file.path(sav.dir,"SnapAScoringUMAP.pdf"),
+          width = 8,height=6)
+ggplot(scvi_coords%>%
+         arrange(Ast10_1),aes(x=UMAP1, y=UMAP2, colour=Ast10_1)) +
+  ggrastr::geom_point_rast(size=1.5) +
+  theme_classic() +
+  theme(plot.title = element_text(size=28,hjust = 0.5),
+        legend.position = "right", 
+        legend.title =element_text(size=14),
+        legend.key.size = unit(1.5, 'cm')) + ggtitle("Ast10. Program")+
+  scale_colour_gradientn(colours =  RColorBrewer::brewer.pal(5,"Purples"))
+dev.off()
+library(scales)
+library(ggpubr)
+color.codes <- c("dodgerblue","goldenrod1","red", "darkgreen")
+zone <- levels(factor(data$finalClusters))
+
+cairo_pdf(file.path(sav.dir,"MouseAst10.pdf"))
+ggplot(data@meta.data ,aes(x=finalClusters,y=Ast10_1,fill=finalClusters)) +
+  stat_boxplot(aes(fill=finalClusters)) + ggtitle("Ast.10 Gene Set")+
+  scale_fill_manual(values=setNames(color.codes, zone))  +theme_pubclean()+
+  theme(legend.position = "none",
+        plot.title = element_text(hjust = 0.5,size=24))
 dev.off()
 
 

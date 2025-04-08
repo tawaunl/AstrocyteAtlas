@@ -22,14 +22,16 @@ source("~/Documents/scHelpers.R")
 dir <- "~/Documents/AstrocytePaper"
 data <- readRDS(file.path(dir,"Astrocyteintegration_AmbientRemoved_filtered_noneuron.RDS"))
 
-
+data <- seu1
+data$finalClusters <- factor(data$integrated_snn_res.0.1)
+levels(data$finalClusters) <- c(1,2,3,4)
 # A. UMAP Clusters ============================================================
 scvi_coords <- get_scvi_coords(data,data$finalClusters)
 color.codes <- c("dodgerblue","goldenrod1","red", "darkgreen")
 zone <- levels(factor(data$finalClusters))
 png(file.path(dir,"Figure2","A_ClustersUMAP.png"),
     width = 500,height=500)
-ggplot(data=scvi_coords , aes(x=UMAP1, y=UMAP2, colour  = finalClusters)) + 
+ggplot(data=scvi_coords %>% arrange(finalClusters) , aes(x=UMAP1, y=UMAP2, colour  = finalClusters)) + 
   geom_point(size=1,alpha = 0.6) +
   scale_colour_manual(values=setNames(color.codes, zone))+ theme_nothing()
 dev.off()
