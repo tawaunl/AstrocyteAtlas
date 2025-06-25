@@ -401,14 +401,13 @@ color.codes <- c("darkgreen","darkgreen","purple","purple","mediumblue","mediumb
 zone <- levels(factor(df_long$diagnosis_harmonized_by_disease))
 
 ###Plot D -----------------------------
-png(file.path(fig.dir,"Human_CellularityPlot_with_percentages.png"),
-    width = 6000,height=1400,res=300)
+cairo_pdf(file.path(fig.dir,"Human_CellularityPlot_with_percentages.pdf"),
+    width = 12,height=5)
 ggplot(df_long, aes(x=diagnosis_harmonized_by_disease, y=value,fill=diagnosis_harmonized_by_disease,colour = diagnosis_harmonized_by_disease)) +
   theme_classic() +
-  geom_jitter(color="darkgrey",width = 0.2,size=1,alpha=.5)  +
+  ggrastr::geom_jitter_rast(color="darkgrey",width = 0.2,size=1,alpha=.5)  +
   geom_boxplot(outlier.shape=NA,alpha=0.5)+ 
-  
-  facet_wrap(~name,scales = "free", ncol=8) + xlab("Disease Label") +
+  facet_wrap(~name,scales = "free", ncol=4) + xlab("Disease Label") +
   theme(axis.text.x = element_text(angle=75,vjust = 0.5),axis.text.y = element_text(size=20)) +
   ylab("Cellularity Percent") +  
   theme(strip.text.x = element_text(size = 14,face = "italic"),
@@ -417,7 +416,6 @@ ggplot(df_long, aes(x=diagnosis_harmonized_by_disease, y=value,fill=diagnosis_ha
         legend.title = element_text(size=14),
         axis.title.x = element_blank(),
         axis.text.x = element_blank()) +
-  scale_y_continuous(limits = c(0, 100), breaks = c(0, 25, 50,75))+
   scale_fill_manual(values=setNames(fill.codes, zone))+
   scale_color_manual(values=setNames(color.codes, zone))
 

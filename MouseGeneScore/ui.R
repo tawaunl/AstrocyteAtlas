@@ -15,7 +15,7 @@ library(DT)
 library(magrittr) 
 sc1conf = readRDS("sc1conf.rds")
 sc1def  = readRDS("sc1def.rds")
-
+shinyOptions(cache = cachem::cache_disk("./app_cache/cache/"))
 sigsearchdef <- c("Myoc","Fxyd6","Gfap","6330403K07Rik","Igfbp5","Serpinf1",
                   "Vim","Fxyd1","S100a6")
 # Define UI for application that draws a histogram
@@ -33,13 +33,57 @@ shinyUI(fluidPage(
       "multiple genes grouped by categorical cell information or plotted on a dimensional reduction of choice", br(), 
       "The normalised expression are averaged, log-transformed and then plotted.", 
       br(),br(), 
-      fluidRow( 
+      fixedRow(
+        column(
+          7, 
+          h4("Dimension Reduction"),
+          selectInput(
+            "sc1a2drX", 
+            "X-axis:", 
+            choices = sc1conf[dimred == TRUE]$UI, 
+            selected = sc1def$dimred[1],
+            width = "200px" # Fixed width
+          ),
+          selectInput(
+            "sc1a2drY", 
+            "Y-axis:", 
+            choices = sc1conf[dimred == TRUE]$UI, 
+            selected = sc1def$dimred[2],
+            width = "200px" # Fixed width
+          )
+        ),
+        column(5,
+               h4("Cell information"), 
+               selectInput("sc1a2inp2", "Cell information:", 
+                           choices = sc1conf$UI, 
+                           selected = sc1def$meta2) %>%  
+                 helper(type = "inline", size = "m", fade = TRUE, 
+                        title = "Cell information to colour cells by", 
+                        content = c("Select cell information to colour cells", 
+                                    "Categorical covariates have a fixed colour palette", 
+                                    paste0("- Continuous covariates are coloured in a ",  
+                                           "Blue-Yellow-Red colour scheme, which can be ", 
+                                           "changed in the plot controls"))),
+               actionButton("sc1a2tog2", "Toggle plot controls"), 
+               conditionalPanel( 
+                 condition = "input.sc1a2tog2 % 2 == 1", 
+                 radioButtons("sc1a2col2", "Colour (Continuous data):", 
+                              choices = c("White-Red", "Blue-Yellow-Red", 
+                                          "Yellow-Green-Purple"), 
+                              selected = "Blue-Yellow-Red"), 
+                 radioButtons("sc1a2ord2", "Plot order:", 
+                              choices = c("Max-1st", "Min-1st", "Original", "Random"), 
+                              selected = "Original", inline = TRUE), 
+                 checkboxInput("sc1a2lab2", "Show cell info labels", value = TRUE)
+               ) 
+        )),
+      fixedRow(
         column( 
-          3, style="border-right: 2px solid black", 
+          3, style="border-right: 2px solid black; padding-left: 10px;", 
           textAreaInput("siginp", HTML("List of gene names <br /> 
                                           (Max 50 genes, separated <br /> 
                                            by , or ; or newline):"), 
-                        height = "300px", 
+                        height = "200px", width = "200px",
                         value = paste0(sigsearchdef, collapse = ", ")) %>% 
             helper(type = "inline", size = "m", fade = TRUE, 
                    title = "List of genes to create signature", 
@@ -48,15 +92,15 @@ shinyUI(fluidPage(
                                "- Genes should be separated by comma, semicolon or newline")), 
           selectInput("siggrp", "Group by (Bar Plot only):", 
                       choices = sc1conf[grp == TRUE]$UI, 
-                      selected = sc1conf[grp == TRUE]$UI[11]) %>% 
+                      selected = sc1conf[grp == TRUE]$UI[11],width = "200px") %>% 
             helper(type = "inline", size = "m", fade = TRUE, 
                    title = "Cell information to group cells by", 
                    content = c("Select categorical cell information to group cells by", 
                                "- Single cells are grouped by this categorical covariate", 
                                "- Plotted as the X-axis of the Bar Plot")), 
           radioButtons("sigplt", "Plot type:", 
-                       choices = c("UMAP", "BarPlot"), 
-                       selected = "UMAP", inline = TRUE),  
+                       choices = c("DimRed", "BarPlot"), 
+                       selected = "DimRed", inline = TRUE),  
           br(), 
           actionButton("sigtogL", "Toggle to subset cells"), 
           conditionalPanel( 
@@ -85,19 +129,32 @@ shinyUI(fluidPage(
                          choices = c("Small", "Medium", "Large"), 
                          selected = "Medium", inline = TRUE)) 
         ), # End of column (6 space) 
-        column(9, h4(htmlOutput("sigoupTxt")), 
-               uiOutput("sigoup.ui"), 
-               downloadButton("sigoup.pdf", "Download PDF"), 
+        column(4, h4(htmlOutput("sigoupTxt")), 
+               plotOutput("sigoup",height = "800px"), 
+               downloadButton("sigoup.pdf", "Download PDF",), 
                downloadButton("sigoup.png", "Download PNG"), br(), 
                div(style="display:inline-block", 
-                   numericInput("sigoup.h", "PDF / PNG height:", width = "138px", 
+                   numericInput("sigoup.h", "PDF / PNG height:", width = "100px", 
                                 min = 4, max = 20, value = 10, step = 0.5)), 
                div(style="display:inline-block", 
-                   numericInput("sigoup.w", "PDF / PNG width:", width = "138px", 
+                   numericInput("sigoup.w", "PDF / PNG width:", width = "100px", 
                                 min = 4, max = 20, value = 10, step = 0.5)) 
-        )  # End of column (6 space) 
-      )    # End of fluidRow (4 space) 
-    ),    # End of tab (2 space) 
+        ),# End of column (6 space) 
+        column( 
+          4, style="border-left: 2px solid black; padding-right: 10px;",
+          column(12,
+                 plotOutput("sc1a2oup2",height = "800px"), 
+                 downloadButton("sc1a2oup2.pdf", "Download PDF"), 
+                 downloadButton("sc1a2oup2.png", "Download PNG"), br(), 
+                 div(style="display:inline-block", 
+                     numericInput("sc1a2oup2.h", "PDF / PNG height:", width = "100px", 
+                                  min = 4, max = 20, value = 6, step = 0.5)), 
+                 div(style="display:inline-block", 
+                     numericInput("sc1a2oup2.w", "PDF / PNG width:", width = "100px", 
+                                  min = 4, max = 20, value = 8, step = 0.5)) 
+          )  # End of column (6 space) 
+        ) # End of fluidRow (4 space) 
+      )),    # End of tab (2 space) 
     # Bubble plot ----------------
     tabPanel( 
       HTML("Bubbleplot / Heatmap"), 
@@ -176,7 +233,7 @@ shinyUI(fluidPage(
     br(), 
     p("", style = "font-size: 125%;"), 
     p(em("This webpage was adapted from  "), a("ShinyCell", 
-                                            href = "https://github.com/SGDDNB/ShinyCell",target="_blank")), 
+                                               href = "https://github.com/SGDDNB/ShinyCell",target="_blank")), 
     br(),br(),br(),br(),br() 
   ))) 
 

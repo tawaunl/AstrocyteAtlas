@@ -26,6 +26,9 @@ data <- readRDS(file.path(dir,"Astrocyteintegration_AmbientRemoved_filtered_none
 myoc.markers <- read.xlsx("~/Downloads/MyocMarkers.xlsx")
 myoc.markers <- myoc.markers[order(myoc.markers$avg_log2FC,decreasing = T),]
 mm <- myoc.markers$gene[1:30]
+all <- table(data$Sample)
+all <- data.frame(all)
+colnames(all) <- c("Sample","Total")
 
 # Score cells with Myoc Markers -------------
 score_intersect <- intersect(mm,rownames(data))
@@ -78,17 +81,17 @@ DotPlot(DAA1,features = "Meg3",group.by ="RNA_snn_res.0.25" )
 
 coldata <- as.data.frame(DAA1@meta.data)
 study_cluster_tmp_by_study <- coldata %>%
-  group_by(StudyName, RNA_snn_res.0.25) %>%
+  group_by(StudyName, RNA_snn_res.0.15) %>%
   summarise(n = n()) %>%
   mutate(freq = n / sum(n)) 
 
 df_normalized <- study_cluster_tmp_by_study %>%
-  group_by(RNA_snn_res.0.25) %>%
+  group_by(RNA_snn_res.0.15) %>%
   mutate(TotalCellsInCluster = sum(freq),
          NormalizedCells = freq / TotalCellsInCluster)
 #### Plot study Composition -----------
 
-ggplot(df_normalized, aes(fill=StudyName, y=NormalizedCells, x=RNA_snn_res.0.25)) +
+ggplot(df_normalized, aes(fill=StudyName, y=NormalizedCells, x=RNA_snn_res.0.15)) +
   geom_bar(position="stack", stat="identity", alpha=0.6) + theme_void()+ theme(axis.title = element_text(size = 20)) +
   theme(legend.title = element_text(size = 20)) + theme(legend.text = element_text(size = 14))+
   theme(axis.text.x = element_text(size = 14)) + theme(axis.text.y = element_text(size = 14)) +
@@ -97,7 +100,7 @@ ggplot(df_normalized, aes(fill=StudyName, y=NormalizedCells, x=RNA_snn_res.0.25)
 
 
 
-QC_Plots_Combined_Vln(seurat_object = DAA1, pt.size = 0.1,group.by ="RNA_snn_res.0.25",
+QC_Plots_Combined_Vln(seurat_object = DAA1, pt.size = 0.1,group.by ="RNA_snn_res.0.15",
                       colors_use = scales::hue_pal()(7))
 
 
@@ -116,13 +119,15 @@ for (cluster in 1:length(markers$statistics)) {
   topmarkers <- c(topmarkers,top)
 }
 
-topmarkers <- c(topmarkers,"Thbs4","Ttr")
+topmarkers[23:25] <- c("Nrg3","Opcml","Ptprd")
+
+topmarkers <- c(topmarkers,"Thbs4")
 
 plot <- DotPlot(DAA1,features = c(unique(topmarkers)), assay = "RNA",
                 cols = "RdYlBu",group.by = "RNA_snn_res.0.25",scale = TRUE)
 
 
-plot <- DotPlot(DAA1,features = c("Myoc","Thbs4","Ttr","Crym"), assay = "RNA",
+plot <- DotPlot(DAA1,features = c("Myoc","Thbs4","Ttr","Crym","Vim"), assay = "RNA",
                 cols = "RdYlBu",group.by = "RNA_snn_res.0.25",scale = TRUE)
 plot + RotatedAxis() +coord_flip() + xlab('Gene') +  ylab('Cluster') +
   theme(axis.text = element_text(size = 14),axis.title = element_text(size=18,face='bold'))  
@@ -142,24 +147,28 @@ features <- markers$statistics %>%
         rownames())|> 
   unlist2()
 
-features
+features[26:28] <- c("Nrg3","Opcml","Ptprd")
+
+sce$subclusters <- factor(sce$subclusters,levels = c("Myoc+","Reactive1",
+                                                     "Reactive2","Interferon-Responsive",
+                                                     "Meg3+"))
+
 rowData(sce)$Marker <- features[match(rownames(sce), features)] |>
   names() %>% 
-  factor(levels = levels(sce$RNA_snn_res.0.25))
-
+  factor(levels = levels(sce$subclusters))
 
 
 sce %>% 
   scDotPlot::scDotPlot(features = unique(features),
-                       group = "RNA_snn_res.0.25",
+                       group = "subclusters",
                        #block = "Sample",
                        scale = TRUE,
                        cluster = FALSE,
-                       groupAnno = "RNA_snn_res.0.25",
+                       groupAnno = "subclusters",
                        featureAnno = "Marker",
                        featureLegends = FALSE,
                        annoHeight = 0.025,
-                       annoColors = list("RNA_snn_res.0.25" = scales::hue_pal()(7),
+                       annoColors = list("subclusters" = scales::hue_pal()(7),
                                                             "Marker" = scales::hue_pal()(7)),
                        annoWidth = 0.1,fontSize = 20,
                        dotColors=c( "blue","#FFFFBF", "red")) 
@@ -169,14 +178,14 @@ sce %>%
 ## Renaming DAA1 subclusters ---------
 DAA1$subclusters <- DAA1$RNA_snn_res.0.25
 DAA1$subclusters <- gsub("\\<0\\>", "Myoc+", DAA1$subclusters)
-DAA1$subclusters <- gsub("\\<1\\>", "Reactive", DAA1$subclusters)
+DAA1$subclusters <- gsub("\\<1\\>", "Reactive1", DAA1$subclusters)
 
-DAA1$subclusters <- gsub("\\<2\\>", "Reactive", DAA1$subclusters)
+DAA1$subclusters <- gsub("\\<2\\>", "Reactive2", DAA1$subclusters)
 #DAA1$subclusters <- gsub("\\<5\\>", "Reactive1", DAA1$subclusters)
 #DAA1$subclusters <- gsub("\\<3\\>", "Reactive1", DAA1$subclusters)
 
-DAA1$subclusters <- gsub("\\<4\\>", "Interferon-Responsive", DAA1$subclusters)
-DAA1$subclusters <- gsub("\\<6\\>", "Meg3+", DAA1$subclusters)
+DAA1$subclusters <- gsub("\\<3\\>", "Interferon-Responsive", DAA1$subclusters)
+DAA1$subclusters <- gsub("\\<4\\>", "Meg3+", DAA1$subclusters)
 
 
 
@@ -208,7 +217,7 @@ df_long <- df_long[! df_long$StudyName %in% filter,]
 ggplot(df_long, aes(x=Disease, y=Percent,fill=Disease,colour = Disease)) + theme_classic() +
   geom_jitter(color="darkgrey",width = 0.4,size=3,alpha=0.6)  +
   geom_boxplot(outlier.shape=NA,alpha=0.5) + 
-  facet_wrap(~Cluster,scales = "free",ncol=4) + xlab("Disease Label") +
+  facet_wrap(~Cluster,scales = "free",ncol=3) + xlab("Disease Label") +
   theme(axis.text.y = element_text(size=20)) +
   ylab("Cellularity Proportion") +  
   theme(strip.text.x = element_text(size = 20,face = "bold"),
@@ -352,12 +361,12 @@ df_transformed <- GetAbundanceTable(abundances,DAA1@meta.data,samplecol = "Sampl
                                     calc.col = "subclusters",return_clr = T)
 
 sig.clusters <- list()
-for(cluster in 1:length(levels(factor(subDA1$subclusters)))){
-  clusterName <- levels(factor(subDA1$subclusters))[cluster]
+for(cluster in 1:length(levels(factor(DAA1$subclusters)))){
+  clusterName <- levels(factor(DAA1$subclusters))[cluster]
   dataCluster <- df_transformed[which(df_transformed$Cluster==clusterName),]
   res <- kruskal.test(Percent ~ Disease, data = dataCluster)
   # check if there is any significance
-  if(res$p.value < 0.8/length(levels(factor(subDA1$subclusters)))){
+  if(res$p.value < 0.8/length(levels(factor(DAA1$subclusters)))){
     sig.clusters[[clusterName]] <- res
     # do a Welch's t-test to find which specific groups are different
     res.AD <- wilcox.test(dataCluster$Percent[which(dataCluster$Disease=="AD_control")],
@@ -374,4 +383,36 @@ for(cluster in 1:length(levels(factor(subDA1$subclusters)))){
 }
 
 
-FeaturePlot(DAA1,"MyocScore")
+VlnPlot(DAA1,"Thbs4",group.by = "RNA_snn_res.0.25")
+
+DimPlot(DAA1,group.by = "subclusters",pt.size=1.5,label=T,label.size = 8,repel = T)
+
+
+#Percent of cells expressing Myoc
+# Extract the expression data
+expression_data <- FetchData(data, vars = "Myoc")
+
+# Categorize cells as "Expressing" or "Non-Expressing"
+expression_data$ExpressionCategory <- ifelse(expression_data$Myoc > 0, "Expressing", "Non-Expressing")
+
+# Count the number of cells in each category
+count_table <- table(expression_data$ExpressionCategory)
+proportion_table <- prop.table(count_table)
+
+# Convert to a data frame for plotting
+plot_data <- as.data.frame(proportion_table)
+colnames(plot_data) <- c("Category", "Proportion")
+
+# Add percentages to the plot data
+plot_data$Percent <- plot_data$Proportion * 100
+
+# Create a bar plot
+ggplot(plot_data, aes(x = Category, y = Percent, fill = Category)) + 
+  geom_bar(stat = "identity", width = 0.6)  + 
+  labs(title = "Proportion of DAA1 Cells Expressing 'Myoc' > 1", 
+       x = "Category", 
+       y = "Percent of Cells") +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  geom_text(aes(label = sprintf("%.1f%%", Percent)), 
+            position = position_stack(vjust = 0.5))

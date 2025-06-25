@@ -22,7 +22,7 @@ sc1conf = readRDS("sc1conf.rds")
 sc1def  = readRDS("sc1def.rds")
 sc1gene = readRDS("sc1gene.rds")
 sc1meta = readRDS("sc1meta.rds")
-
+shinyOptions(cache = cachem::cache_disk("./app_cache/cache/"))
 
 
 ### Useful stuff 
@@ -65,8 +65,7 @@ sctheme <- function(base_size = 24, XYval = TRUE, Xang = 0, XjusH = 0.5){
     axis.title =  element_text(face = "bold"), 
     axis.text =   element_text(size = base_size), 
     axis.text.x = element_text(angle = Xang, hjust = XjusH), 
-    legend.position = "bottom", 
-    legend.key =      element_rect(colour = NA, fill = NA) 
+    legend.position = "bottom"
   ) 
   if(!XYval){ 
     oupTheme = oupTheme + theme( 
@@ -99,7 +98,76 @@ scGeneList <- function(inp, inpGene){
   return(geneList) 
 } 
 
-
+scDRcell <- function(inpConf, inpMeta, inpdrX, inpdrY, inp1, inpsub1, inpsub2, 
+                     inpcol, inpord, inplab){ 
+  if(is.null(inpsub1)){inpsub1 = inpConf$UI[1]} 
+  # Prepare ggData 
+  ggData = inpMeta[, c(inpConf[UI == inpdrX]$ID, inpConf[UI == inpdrY]$ID, 
+                       inpConf[UI == inp1]$ID, inpConf[UI == inpsub1]$ID),  
+                   with = FALSE] 
+  colnames(ggData) = c("X", "Y", "val", "sub") 
+  rat = (max(ggData$X) - min(ggData$X)) / (max(ggData$Y) - min(ggData$Y)) 
+  bgCells = FALSE 
+  if(length(inpsub2) != 0 & length(inpsub2) != nlevels(ggData$sub)){ 
+    bgCells = TRUE 
+    ggData2 = ggData[!sub %in% inpsub2] 
+    ggData = ggData[sub %in% inpsub2] 
+  } 
+  if(inpord == "Max-1st"){ 
+    ggData = ggData[order(val)] 
+  } else if(inpord == "Min-1st"){ 
+    ggData = ggData[order(-val)] 
+  } else if(inpord == "Random"){ 
+    ggData = ggData[sample(nrow(ggData))] 
+  } 
+  
+  # Do factoring if required 
+  if(!is.na(inpConf[UI == inp1]$fCL)){ 
+    ggCol = strsplit(inpConf[UI == inp1]$fCL, "\\|")[[1]] 
+    names(ggCol) = levels(ggData$val) 
+    ggLvl = levels(ggData$val)[levels(ggData$val) %in% unique(ggData$val)] 
+    ggData$val = factor(ggData$val, levels = ggLvl) 
+    ggCol = ggCol[ggLvl] 
+  } 
+  
+  # Actual ggplot 
+  ggOut = ggplot(ggData, aes(X, Y, color = val))
+  if(bgCells){ 
+    ggOut = ggOut + 
+      geom_point(data = ggData2, color = "snow2", size = 4, shape = 16)+guides(
+        color = guide_legend(override.aes = list(size = 10))  # Change legend dot size
+      )+
+      coord_fixed(ratio = 1) 
+  } 
+  ggOut = ggOut + 
+    geom_point(size = 4, shape = 16) + xlab(inpdrX) + ylab(inpdrY) + 
+    sctheme(base_size = sList[3], XYval = 12)+ guides(
+      color = guide_legend(override.aes = list(size = 10))  # Change legend dot size
+    ) +coord_fixed(ratio = 1)
+  if(is.na(inpConf[UI == inp1]$fCL)){ 
+    ggOut = ggOut + scale_color_gradientn("", colours = cList[[inpcol]]) + 
+      guides(color = guide_colorbar(barwidth = 15,
+                                    title.position = "top",
+                                    title.hjust = 0.5    )) 
+  } else { 
+    sListX = min(nchar(paste0(levels(ggData$val), collapse = "")), 200) 
+    sListX = 0.75 * (sList - (1.5 * floor(sListX/50))) 
+    ggOut = ggOut + scale_color_manual("", values = ggCol) + 
+      guides(color = guide_legend(override.aes = list(size = 8),  
+                                  nrow = inpConf[UI == inp1]$fRow+1)) + 
+      theme(legend.text = element_text(size = 16)) 
+    if(inplab){ 
+      ggData3 = ggData[, .(X = mean(X), Y = mean(Y)), by = "val"] 
+      lListX = min(nchar(paste0(ggData3$val, collapse = "")), 200) 
+      lListX = lList - (0.25 * floor(lListX/50)) 
+      ggOut = ggOut + 
+        geom_text_repel(data = ggData3, aes(X, Y, label = val), 
+                        color = "grey10", bg.color = "grey95", bg.r = 0.15, 
+                        size = lListX[3], seed = 42) 
+    } 
+  } 
+  return(ggOut) 
+} 
 
 scBubbHeat <- function(inpConf, inpMeta, inp, inpGrp, inpPlt, 
                        inpsub1, inpsub2, inpH5, inpGene, inpScl, inpRow, inpCol, 
@@ -240,7 +308,7 @@ scBubbHeat <- function(inpConf, inpMeta, inp, inpGrp, inpPlt,
 
 scSigSearch <- function(inpConf, inpMeta, inp, inpGrp, inpPlt, 
                        inpsub1, inpsub2, inpH5, inpGene,inpord,
-                       inpcols, inpfsz,inpsiz, save = FALSE){ 
+                       inpcols, inpfsz,inpsiz, inpdrX, inpdrY,save = FALSE){ 
   
   if(is.null(inpsub1)){inpsub1 = inpConf$UI[1]} 
   # Identify genes that are in our dataset 
@@ -249,7 +317,7 @@ scSigSearch <- function(inpConf, inpMeta, inp, inpGrp, inpPlt,
   shiny::validate(need(nrow(geneList) <= 50, "More than 50 genes to plot! Please reduce the gene list!")) 
   shiny::validate(need(nrow(geneList) > 1, "Please input at least 2 genes to plot!")) 
   # New prepare
-  ggData = inpMeta[, c(inpConf[UI == sc1def$dimred[1]]$ID, inpConf[UI == sc1def$dimred[2]]$ID, 
+  ggData = inpMeta[, c(inpConf[UI == inpdrX]$ID, inpConf[UI == inpdrY]$ID, 
                        inpConf[UI == inpsub1]$ID,inpConf[UI == inpGrp]$ID),  
                    with = FALSE]
   colnames(ggData) = c("X", "Y", "sub","group")
@@ -278,7 +346,7 @@ scSigSearch <- function(inpConf, inpMeta, inp, inpGrp, inpPlt,
   
   # Plotting
    # Actual plot according to plottype 
-  if(inpPlt == "UMAP"){ 
+  if(inpPlt == "DimRed"){ 
     # Ordering depending on chosen method
     if (inpord == "Max-1st"){ 
       ggData = ggData[order(val, decreasing = FALSE)]
@@ -293,10 +361,13 @@ scSigSearch <- function(inpConf, inpMeta, inp, inpGrp, inpPlt,
                                  shape = 16)
     }
     ggOut = ggOut + geom_point(size = 4, shape = 16) +
-      xlab("UMAP1") + ylab("UMAP2") +
-      sctheme(base_size = sList[4], XYval = 12) +
+      xlab(inpdrX) + ylab(inpdrY) +
+      sctheme(base_size = sList[3], XYval = 12) +
       scale_color_gradientn("Signature Expression", colours = cList[[inpcols]]) +
-      guides(color = guide_colorbar(barwidth = 15)) +coord_fixed(ratio = 1)
+      guides(color = guide_colorbar(barwidth = 15,
+                                    title.position = "top",
+                                    title.hjust = 0.5)) +
+      coord_fixed(ratio = 1)
     
   } else { 
     # Bar plot 
@@ -319,6 +390,7 @@ scSigSearch <- function(inpConf, inpMeta, inp, inpGrp, inpPlt,
 
 # Start Server-------
 shinyServer(function(input, output, session) { 
+  observe_helpers()
   
   ## Bubble plot UI ----------
   output$sc1d1sub1.ui <- renderUI({ 
@@ -400,7 +472,7 @@ shinyServer(function(input, output, session) {
     if(nrow(geneList) > 50){ 
       HTML("More than 50 input genes! Please reduce the gene list!") 
     } else { 
-      oupsig = paste0(nrow(geneList[present == TRUE]), " genes OK and will be plotted") 
+      oupsig = paste0(nrow(geneList[present == TRUE]), " genes included in signature") 
       if(nrow(geneList[present == FALSE]) > 0){ 
         oupsig = paste0(oupsig, "<br/>", 
                      nrow(geneList[present == FALSE]), " genes not found (", 
@@ -414,7 +486,7 @@ shinyServer(function(input, output, session) {
   output$sigoup <- renderPlot({ 
     scSigSearch(sc1conf, sc1meta, input$siginp, input$siggrp, input$sigplt, 
                input$sigsub1, input$sigsub2, "sc1gexpr.h5", sc1gene,input$sigord1,
-               input$sigcols, input$sigfsz,input$sigpsz) 
+               input$sigcols, input$sigfsz,input$sigpsz,input$sc1a2drX, input$sc1a2drY) 
   }) 
   output$sigoup.ui <- renderUI({ 
     plotOutput("sigoup", height = pList2[input$sigpsz]) 
@@ -425,7 +497,7 @@ shinyServer(function(input, output, session) {
       file, device = "pdf", height = input$sigoup.h, width = input$sc1d1oup.w, 
       plot = scSigSearch(sc1conf, sc1meta, input$siginp, input$siggrp, input$sigplt, 
                          input$sigsub1, input$sigsub2, "sc1gexpr.h5", sc1gene,input$sigord1,
-                         input$sigcols, input$sigfsz,input$sigpsz, save = TRUE) ) 
+                         input$sigcols, input$sigfsz,input$sigpsz,input$sc1a2drX, input$sc1a2drY, save = TRUE) ) 
     }) 
   output$sigoup.png <- downloadHandler( 
     filename = function() { paste0("sc1",input$sigplt,"_",input$siggrp,".png") }, 
@@ -433,8 +505,39 @@ shinyServer(function(input, output, session) {
       file, device = "png", height = input$sigoup.h, width = input$sigoup.w, 
       plot = scSigSearch(sc1conf, sc1meta, input$siginp, input$siggrp, input$sigplt, 
                          input$sigsub1, input$sigsub2, "sc1gexpr.h5", sc1gene,input$sigord1,
-                         input$sigcols, input$sigfsz,input$sigpsz, save = TRUE) ) 
+                         input$sigcols, input$sigfsz,input$sigpsz,input$sc1a2drX, input$sc1a2drY, save = TRUE) ) 
     }) 
 # End Sig Search ----------
   
+  # Cell info. ----------
+  output$sc1a2oup2 <- renderPlot({ 
+    scDRcell(sc1conf, sc1meta, input$sc1a2drX, input$sc1a2drY, input$sc1a2inp2,  
+             input$sigsub1, input$sigsub2, 
+             input$sc1a2col2, input$sc1a2ord2, input$sc1a2lab2) 
+  }) 
+  output$sc1a2oup2.ui <- renderUI({ 
+    plotOutput("sc1a2oup2", height = pList[input$sc1a2psz]) 
+  }) 
+  output$sc1a2oup2.pdf <- downloadHandler( 
+    filename = function() { paste0("sc1",input$sc1a2drX,"_",input$sc1a2drY,"_",  
+                                   input$sc1a2inp2,".pdf") }, 
+    content = function(file) { ggsave( 
+      file, device = "pdf", height = input$sc1a2oup2.h, width = input$sc1a2oup2.w, useDingbats = FALSE, 
+      plot = scDRcell(sc1conf, sc1meta, input$sc1a2drX, input$sc1a2drY, input$sc1a2inp2,   
+                      input$sigsub1, input$sigsub2, 
+                      input$sc1a2col2, input$sc1a2ord2, input$sc1a2lab2) ) 
+  }) 
+  output$sc1a2oup2.png <- downloadHandler( 
+    filename = function() { paste0("sc1",input$sc1a2drX,"_",input$sc1a2drY,"_",  
+                                   input$sc1a2inp2,".png") }, 
+    content = function(file) { ggsave( 
+      file, device = "png", height = input$sc1a2oup2.h, width = input$sc1a2oup2.w, 
+      plot = scDRcell(sc1conf, sc1meta, input$sc1a2drX, input$sc1a2drY, input$sc1a2inp2,   
+                      input$sigsub1, input$sigsub2, 
+                      input$sc1a2col2, input$sc1a2ord2, input$sc1a2lab2) ) 
+  }) 
+  
 })
+
+
+

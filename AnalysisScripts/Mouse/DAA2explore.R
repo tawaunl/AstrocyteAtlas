@@ -23,6 +23,9 @@ library(openxlsx)
 dir <- "~/Documents/AstrocytePaper"
 data <- readRDS(file.path(dir,"Astrocyteintegration_AmbientRemoved_filtered_noneuron.RDS"))
 
+all <- table(data$Sample)
+all <- data.frame(all)
+colnames(all) <- c("Sample","Total")
 
 DAA2 <- subset(data, subset = ClusterNames=="DAA2")
 library(scCustomize)
@@ -61,7 +64,7 @@ DotPlot(DAA2,features = c("Myoc","Crym","Meg3","Ttr"),
   theme(axis.text = element_text(size = 14),axis.title = element_text(size=18,face='bold'))  
 
 
-DotPlot(DAA2,features = "Crym",group.by ="RNA_snn_res.0.5" )
+DotPlot(DAA2,features = "Crym",group.by ="refinedClusters" )
 DotPlot(DAA2,features = "Meg3",group.by ="RNA_snn_res.0.5" )
 DotPlot(DAA2,features = "Ttr",group.by ="RNA_snn_res.0.5" )
 
@@ -97,7 +100,7 @@ counts <- initializeSparseMatrix(counts)
 lognorm <- logNormCounts.chan(counts,batch = DAA2$StudyID)
 markers <- scoreMarkers.chan(lognorm,
                              groups=DAA2$refinedClusters, batch=DAA2$StudyID,lfc=0)
-saveRDS(DAA2,"~/Documents/AstrocytePaper/DAA2subcluster.rds")
+saveRDS(markers,"~/Documents/AstrocytePaper/DAA2subclusterMarkers.rds")
 # Get top 5 markers from each cluster 
 topmarkers <- c()
 for (cluster in 1:length(markers$statistics)) {
@@ -106,6 +109,40 @@ for (cluster in 1:length(markers$statistics)) {
   top <- rownames(clustermarkers)[1:5]
   topmarkers <- c(topmarkers,top)
 }
+
+gcSample <- list()
+for (cluster in 1:length(markers$statistics)) {
+  clustermarkers <- data.frame(markers$statistics[[cluster]])
+  clustermarkers <- clustermarkers[order(clustermarkers$logFC,decreasing = TRUE),]
+  geneList <- as.numeric(clustermarkers$logFC[which(clustermarkers$logFC > 0)])
+  names(geneList) <- rownames(clustermarkers[which(clustermarkers$logFC > 0),])
+  
+  gcSample[[paste0("Cluster_",cluster)]] <- geneList
+  
+}
+
+library(clusterProfiler)
+
+ck <- lapply(names(gcSample),function(x){
+  gseGO(gcSample[[x]],ont = "BP",
+        OrgDb = org.Mm.eg.db::org.Mm.eg.db,
+        keyType = "SYMBOL",eps=0, pAdjustMethod = "BH")
+})
+names(ck) <- names(gcSample)
+gsea_results <- lapply(names(ck), function(cluster){
+  ck[[cluster]]@result
+})
+
+names(gsea_results) <- names(ck)
+DotPlotCompare(
+  gsea_list = gsea_results,
+  n = 10,
+  size_col = "NES",
+  color_col = "p.adjust",
+  size_cutoff = NULL,      # Filter to pathways with NES >= 1.5
+  color_cutoff = 0.01,
+  direction = "positive" # Filter to pathways with p.adjust <= 0.05
+)
 
 topmarkers <- c(topmarkers,"Thbs4")
 
@@ -125,19 +162,17 @@ library(AnnotationDbi)
 features <- markers$statistics %>% 
   map(~ .x |>
         as.data.frame() |>
-        arrange(desc(logFC))|>
-        dplyr::slice(1:6) |>
+        arrange(desc(cohen.mean))|>
+        dplyr::slice(1:15) |>
         rownames())|> 
   unlist2()
 
-features
+features[1:3] <- c("Gfap","Crym","Hsp90ab1")
 rowData(sce)$Marker <- features[match(rownames(sce), features)] |>
   names() %>% 
   factor(levels = levels(sce$refinedClusters))
 
-
-features <- c("Crym","Meg3","Ttr","Myoc")
-p <- scDotPlot::scDotPlot(sce,features = unique(features),
+scDotPlot::scDotPlot(sce,features = unique(features),
                        group = "refinedClusters",
                        #block = "Sample",
                        scale = TRUE,
@@ -150,21 +185,20 @@ p <- scDotPlot::scDotPlot(sce,features = unique(features),
                        annoColors = list("refinedClusters" = scales::hue_pal()(7),
                                          "Marker" = scales::hue_pal()(7)),
                        annoWidth = 0.1,fontSize = 20) 
-p <- NULL
+
 
 VlnPlot(data,"Ttr",group.by = "finalClusters",slot = "counts")
 Dim
 ## Renaming DAA2 subclusters ---------
-DAA2$subclusters <- DAA2$RNA_snn_res.0.5
-DAA2$subclusters <- gsub("\\<0\\>", "Myoc+", DAA2$subclusters)
-DAA2$subclusters <- gsub("\\<1\\>", "Reactive", DAA2$subclusters)
+DAA2$subclusters <- DAA2$refinedClusters
+DAA2$subclusters <- gsub("\\<0\\>", "NT-Transport", DAA2$subclusters)
+DAA2$subclusters <- gsub("\\<1\\>", "Fth1+", DAA2$subclusters)
 
-DAA2$subclusters <- gsub("\\<2\\>", "Reactive", DAA2$subclusters)
-#DAA2$subclusters <- gsub("\\<5\\>", "Reactive1", DAA2$subclusters)
-#DAA2$subclusters <- gsub("\\<3\\>", "Reactive1", DAA2$subclusters)
+DAA2$subclusters <- gsub("\\<2\\>", "OxPhos", DAA2$subclusters)
 
-DAA2$subclusters <- gsub("\\<4\\>", "Interferon-Responsive", DAA2$subclusters)
-DAA2$subclusters <- gsub("\\<6\\>", "Meg3+", DAA2$subclusters)
+
+DAA2$subclusters <- gsub("\\<3\\>", "Gfap+", DAA2$subclusters)
+
 
 
 
@@ -230,7 +264,7 @@ ggplot(scvi_coords%>%
   theme_classic() + theme(plot.title = element_text(hjust = 0.5)) +
   theme(legend.position = "none", legend.title =element_text(size=14),
         legend.key.size = unit(1.5, 'cm')) +
-  scale_colour_gradientn(limits= c(0,1), oob=squish,
+  scale_colour_gradientn(limits= c(0,1), oob=scales::squish,
                          colours =  RColorBrewer::brewer.pal(5,"Purples"))
 
 
@@ -256,6 +290,7 @@ scores_by_cell <- colMeans(
 DAA2[["ADCurrentAstroScore"]] <- scores_by_cell
 
 
+library(scales)
 scvi_coords <- get_scvi_coords(DAA2,DAA2$RNA_snn_res.0.5)
 colnames(scvi_coords) <- make.unique(colnames(scvi_coords))
 text <- DAA2$RNA_snn_res.0.5
@@ -264,7 +299,7 @@ text_y <- vapply(split(scvi_coords$UMAP2, text), median, FUN.VALUE=0)
 
 ggplot(scvi_coords%>%
          arrange(ADCurrentAstroScore),aes(x=UMAP1, y=UMAP2, colour=ADCurrentAstroScore)) +
-  geom_point() +
+  geom_point(size=3) +
   theme_classic() + theme(plot.title = element_text(hjust = 0.5)) +
   theme(legend.position = "none", legend.title =element_text(size=14),
         legend.key.size = unit(1.5, 'cm')) +
@@ -299,19 +334,23 @@ text_y <- vapply(split(scvi_coords$UMAP2, text), median, FUN.VALUE=0)
 
 ggplot(scvi_coords%>%
          arrange(MSCurrentAstroScore),aes(x=UMAP1, y=UMAP2, colour=MSCurrentAstroScore)) +
-  geom_point() +
+  geom_point(size=3) +
   theme_classic() + theme(plot.title = element_text(hjust = 0.5)) +
   theme(legend.position = "none", legend.title =element_text(size=14),
         legend.key.size = unit(1.5, 'cm')) +
   scale_colour_gradientn(limits= c(0,1), oob=squish,
                          colours =  RColorBrewer::brewer.pal(9,"Purples"))
+
 VlnPlot(DAA2,features= c("LPSCurrentAstroScore","ADCurrentAstroScore",
                          "MSCurrentAstroScore"),
         group.by = "refinedClusters",add.noise = T,raster = T)
 
+ggplot(DAA2@meta.data,aes(x=refinedClusters,y=ADCurrentAstroScore,fill = refinedClusters))+
+  geom_boxplot()
+
 # Abundance plot -----------------------
 
-abundances<- table(DAA2$RNA_snn_res.0.5,factor(DAA2$Sample))
+abundances<- table(DAA2$subclusters,factor(DAA2$Sample))
 
 df_long <- GetAbundanceTable(abundances,coldata = DAA2@meta.data,samplecol = "Sample",
                              subset.cols = c("Sample","Disease","BrainRegion","StudyName"),
@@ -335,15 +374,15 @@ ggplot(df_long, aes(x=Disease, y=Percent,fill=Disease,colour = Disease))+ theme_
 
 df_transformed <- GetAbundanceTable(abundances,DAA2@meta.data,samplecol = "Sample",
                                     subset.cols = c("Sample","Disease","BrainRegion","StudyName"),
-                                    calc.col = "RNA_snn_res.0.5",return_clr = T)
+                                    calc.col = "subclusters",return_clr = T)
 
 sig.clusters <- list()
-for(cluster in 1:length(levels(factor(DAA2$RNA_snn_res.0.5)))){
-  clusterName <- levels(factor(DAA2$RNA_snn_res.0.5))[cluster]
+for(cluster in 1:length(levels(factor(DAA2$subclusters)))){
+  clusterName <- levels(factor(DAA2$subclusters))[cluster]
   dataCluster <- df_transformed[which(df_transformed$Cluster==clusterName),]
   res <- kruskal.test(Percent ~ Disease, data = dataCluster)
   # check if there is any significance
-  if(res$p.value < 0.8/length(levels(factor(DAA2$RNA_snn_res.0.5)))){
+  if(res$p.value < 0.8/length(levels(factor(DAA2$subclusters)))){
     sig.clusters[[clusterName]] <- res
     # do a Welch's t-test to find which specific groups are different
     res.AD <- wilcox.test(dataCluster$Percent[which(dataCluster$Disease=="AD_control")],
@@ -361,3 +400,4 @@ for(cluster in 1:length(levels(factor(DAA2$RNA_snn_res.0.5)))){
 
 
 FeaturePlot(DAA2,"MyocScore")
+saveRDS(DAA2,"~/Documents/AstrocytePaper/DAA2subcluster.rds")
