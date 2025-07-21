@@ -123,7 +123,7 @@ ggplot(study_cluster_tmp_by_study_scaled, aes(fill=Model, y=scaled, x=finalClust
   geom_bar(position="stack", stat="identity", alpha=0.9) + theme_void()+ theme(axis.title = element_text(size = 20)) +
   theme(legend.title = element_text(size = 20)) + theme(legend.text = element_text(size = 14))+
   theme(axis.text.x = element_text(size = 14)) + theme(axis.text.y = element_text(size = 14)) +
-  xlab("Clusters") + ylab("Proportion of cells within a study") +
+  xlab("Clusters") + ylab("Proportion of cells across all studies") +
   theme(axis.title.y =  element_text(angle = 90))
 
 # Brain Region Stacked ------------------
@@ -151,9 +151,9 @@ ggplot(study_cluster_tmp_by_study_scaled, aes(fill=BrainRegion, y=scaled, x=fina
   geom_bar(position="stack", stat="identity", alpha=0.9) + theme_void()+ theme(axis.title = element_text(size = 20)) +
   theme(legend.title = element_text(size = 20)) + theme(legend.text = element_text(size = 14))+
   theme(axis.text.x = element_text(size = 14)) + theme(axis.text.y = element_text(size = 14)) +
-  xlab("Clusters") + ylab("Proportion of cells within a Region") +
+  xlab("Clusters") + ylab("Proportion of cells within a Cluster") +
   theme(axis.title.y =  element_text(angle = 90))
-
+library(tidyr)
 
 # Cellularity Brain Region ----------
 normalized_data <- metadata %>%
@@ -176,7 +176,7 @@ ggplot(normalized_data, aes(x = BrainRegion, y = Percentage, fill = BrainRegion)
   labs(
     title = "Cluster Distribution by Brain Region",
     x = "Brain Region",
-    y = "Percentage of Cells in Cluster"
+    y = "Percentage of Cells in Regaion"
   ) +
   theme_minimal() +
   theme(
