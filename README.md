@@ -6,7 +6,7 @@ This repository contains the computational analysis code for the manuscript "Int
 
 This study presents a comprehensive meta-analysis of astrocyte populations across multiple neurodegenerative diseases using single-cell RNA sequencing data. We identified disease-associated astrocyte (DAA) subtypes and characterized their molecular signatures, spatial distributions, and functional roles in Alzheimer's Disease (AD), Multiple Sclerosis (MS), and Parkinson's Disease (PD).
 
-### Key Findings
+![](./Overview.png) \### Key Findings
 
 -   Identification of distinct disease-associated astrocyte subtypes (DAA1 and DAA2)
 -   Cross-species validation using mouse models and human post-mortem tissue
@@ -37,6 +37,7 @@ This study presents a comprehensive meta-analysis of astrocyte populations acros
 |   ├── Figure8.R
 │   └──Supplemental
 ├── README.md           # This file
+├── shiny               # web applications to explore data
 └── utils/
     └── scHelpers.R     # Custom helper functions
 ```
@@ -198,11 +199,11 @@ If you use this code or data, please cite:
 
 ```         
 @article {Lucas2025.02.12.637903,
-	author = {Lucas, Tawaun A. and Novikova, Gloriia and Rao, Sadhna and Wang, Yuanyuan and Laufer, Benjamin I. and Pandey, Shristi. and Webb, Michelle. G. and Jorstad, Nikolas. and Friedman, Brad A. and Hanson, Jesse E. and Kaminker, Joshua S.},
-	title = {Integrated Cross-Disease Atlas of Human And Mouse Astrocytes Reveals Heterogeneity and Conservation of Astrocyte Subtypes in Neurodegeneration},
-	elocation-id = {2025.02.12.637903},
-	year = {2025},
-	doi = {10.1101/2025.02.12.637903}
+    author = {Lucas, Tawaun A. and Novikova, Gloriia and Rao, Sadhna and Wang, Yuanyuan and Laufer, Benjamin I. and Pandey, Shristi. and Webb, Michelle. G. and Jorstad, Nikolas. and Friedman, Brad A. and Hanson, Jesse E. and Kaminker, Joshua S.},
+    title = {Integrated Cross-Disease Atlas of Human And Mouse Astrocytes Reveals Heterogeneity and Conservation of Astrocyte Subtypes in Neurodegeneration},
+    elocation-id = {2025.02.12.637903},
+    year = {2025},
+    doi = {10.1101/2025.02.12.637903}
 ```
 
 ## 📞 Contact
