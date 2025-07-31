@@ -16,11 +16,11 @@ This study presents a comprehensive meta-analysis of astrocyte populations acros
 
 ## 🔗 Links
 
--   **Preprint**: [bioRxiv link - to be added]
--   Static Data Exploration:
+-   **Preprint**: [bioRxiv](https://www.biorxiv.org/content/10.1101/2025.02.12.637903v1)
+-   Static Data Exploration: <http://research-pub.gene.com/AstroAtlas/>
 -   **Interactive Shiny Applications**:
-    -   [Human]
-    -   [Mouse]
+    -   [Human](https://tawaunl.shinyapps.io/HumanGeneScore_Downsampled/)
+    -   [Mouse](https://tawaunl.shinyapps.io/MouseGeneScore_Astro/)
 
 ## 📁 Repository Structure
 
@@ -208,4 +208,5 @@ If you use this code or data, please cite:
 
 ## 📞 Contact
 
-For questions regarding this analysis: - **Corresponding Authors**: [kaminker.josh\@gene.com](mailto:kaminker.josh@gene.com){.email} **Code Issues**: Open a GitHub issue - **Data Access**: Contact corresponding author
+For questions regarding this analysis: - **Corresponding Authors**: [kaminker.josh\@gene.com](mailto:kaminker.josh@gene.com)
+**Code Issues**: Open a GitHub issue - **Data Access**: Contact corresponding author
