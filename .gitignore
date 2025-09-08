@@ -35,3 +35,5 @@ po/*~
 rsconnect/
 shinyApp
 MouseGeneScore _deploy.zip
+AnalysisScripts/.DS_Store
+.DS_Store
