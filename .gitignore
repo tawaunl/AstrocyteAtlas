@@ -37,3 +37,7 @@ shinyApp
 MouseGeneScore _deploy.zip
 AnalysisScripts/.DS_Store
 .DS_Store
+*.err
+*.out
+*.Rproj
+
