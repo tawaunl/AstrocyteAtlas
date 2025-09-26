@@ -5,18 +5,23 @@ library(ggplot2)
 library(CountClust)
 library(MatrixExtra)
 
-out.dir <- "/gstore/project/neurodegen_meta/neurodegeneration_meta-analysis/Rscripts/TopicModeling"
-ks = c(4,6,8,10,12,14,15,16,18,20)
+out.dir <- "/gpfs/scratchfs01/site/u/lucast3/AstrocyteAtlas/AnalysisScripts/Mouse/TopicModeling"
+ks = c(4,6,8,10,12,14)
 models <- list()
 i <- 1
 tol=0.1
-data <- readRDS("/gstore/project/neurodegen_meta/data/DS_50k.rds")
+data <- readRDS("/gstore/data/astroMetaAnalysis/data/AstrocyteIntegration_AmbientRemoved_filtered_noneuron.RDS")
 
 for (k in ks){
-  k_dir <- paste0(out.dir, "/", k, "topics_tol", tol)
-  rda_fname <- paste0(k_dir, "/", "FitGoM_50K_k", k, "_tol", tol , ".rda")
+  k_dir <- file.path(out.dir,"results",paste0("fasttopics_k",k,"_results"))
+  if (!dir.exists(k_dir)) {
+    dir.create(k_dir, recursive = TRUE)
+  }
   
-  load(rda_fname)
+  rda_fname <- file.path(out.dir,"results",paste0("fasttopics_k",k,"_results.rds"))
+  
+  res <- readRDS(rda_fname)
+  
   omega <- Topic_clus$omega
   annotation <- data.frame(
     sample_id = paste0("X", c(1:NROW(omega))),
