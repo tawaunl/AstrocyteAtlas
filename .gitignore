@@ -40,4 +40,5 @@ AnalysisScripts/.DS_Store
 *.err
 *.out
 *.Rproj
-
+AstroAtlas.Rproj
+*.rds 

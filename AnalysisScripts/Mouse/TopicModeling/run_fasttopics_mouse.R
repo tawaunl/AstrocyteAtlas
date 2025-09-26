@@ -23,7 +23,8 @@ tryCatch({
   # Load the count matrix. Assuming it's in Matrix Market format.
   data <- readRDS("/gstore/data/astroMetaAnalysis/data/AstrocyteIntegration_AmbientRemoved_filtered_noneuron.RDS")
   counts <- GetAssayData(data,slot = "counts",assay = "RNA")
-  
+  rm(data)
+  gc()
   # Load gene names if available
   # genes <- read.delim("genes.tsv", header = FALSE, stringsAsFactors = FALSE)$V1
   # rownames(counts) <- genes
@@ -49,7 +50,7 @@ fit_results[["poisson_nmf"]] <- fit_poisson
 
 # 2. Multinomial Topic Model Fit
 message("Starting Multinomial Topic Model fit...")
-fit_multinom <- fit_topic_model(counts, k = k, numiter = 200, verbose = "progressbar")
+fit_multinom <- fit_topic_model(counts, k = k, verbose = "progressbar")
 fit_results[["multinom_topic_model"]] <- fit_multinom
 
 # --- Save the Results ---
