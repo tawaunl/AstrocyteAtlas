@@ -23,7 +23,7 @@ topicModeling <- function(mat, n = 16, tol = 0.1, save.path) {
 }
 
 subsample = TRUE # Sub-sample for testing
-data <- readRDS("/gstore/project/neurodegen_meta/data/DS_50k.rds")
+data <- readRDS("/gstore/data/astroMetaAnalysis/data/DS_50k.rds")
 mat <- GetAssayData(data,slot = "counts",assay = "RNA")
 
 mat <- mat[-which(rowSums(mat)==0)]

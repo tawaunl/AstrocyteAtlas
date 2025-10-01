@@ -1,10 +1,11 @@
-counts <- readRDS("/gstore/data/astroMetaAnalysis/data/HumanCounts_subsetTopics.rds")
-counts <- GetAssayData()
-names(cell_clusters) <- paste0("Cell", 1:1000)
+library(Seurat)
+data <-readRDS("/gstore/data/astroMetaAnalysis/data/HumanSeurat_subset.rds")
+counts <- GetAssayData(data,slot = "counts",assay = "RNA")
+cell_clusters <- data$ClusterNames
 
 # --- Step 2: Sample a fixed percentage of cells from each cluster ---
 # Define the percentage (as a fraction) to sample from each cluster.
-fraction_to_sample <- 0.25 # Sample 25% of cells
+fraction_to_sample <- 0.15 # Sample 25% of cells
 
 # Split the cell names by their cluster.
 cells_by_cluster <- split(names(cell_clusters), f = cell_clusters)
@@ -25,7 +26,10 @@ sampled_cells_frac <- unlist(sampled_cells_list_frac)
 # --- Step 3: Subset your data ---
 # Subset the data based on the new vector of sampled cells.
 sampled_counts_frac <- counts[, sampled_cells_frac]
+data_sub <- data[,colnames(data) %in% sampled_cells_frac]
+
 sampled_clusters_frac <- cell_clusters[sampled_cells_frac]
+saveRDS(data_sub,"/gstore/data/astroMetaAnalysis/data/HumanSubDataforTopics.rds")
 saveRDS(sampled_counts_frac,"/gstore/data/astroMetaAnalysis/data/HumanCounts_subsetTopics.rds")
 # Check the new dimensions and cluster distribution.
 dim(sampled_counts_frac)

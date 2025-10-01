@@ -22,6 +22,7 @@ n_features = 200
 prolif_topic = 'lda_14'
 prolif_cutoff = 0.08
 topic_range <- 1:14
+
 # join Usage to Seurat object
 for (topic in topic_range) {
   data[[paste0("lda_",topic)]] <- usage[[paste0("lda_",topic)]]

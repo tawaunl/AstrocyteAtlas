@@ -42,3 +42,8 @@ AnalysisScripts/.DS_Store
 *.Rproj
 AstroAtlas.Rproj
 *.rds 
+*.pdf
+*.pkgdown
+*.png 
+*.rda  
+

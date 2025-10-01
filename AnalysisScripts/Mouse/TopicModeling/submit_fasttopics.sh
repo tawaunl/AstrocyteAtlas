@@ -1,12 +1,12 @@
 #!/bin/bash
 #SBATCH --job-name=fasttopics_array_mouse      # Job name
-#SBATCH --array=4,6,8,10,12,14                     # The range of k values to run. Adjust as needed.
+#SBATCH --array=2,3,10,14,16,18,22,26                     # The range of k values to run. Adjust as needed.
 #SBATCH --output=/gpfs/scratchfs01/site/u/lucast3/AstrocyteAtlas/AnalysisScripts/Mouse/TopicModeling/logs/fasttopics_%A_%a.out  # Standard output file
 #SBATCH --error=/gpfs/scratchfs01/site/u/lucast3/AstrocyteAtlas/AnalysisScripts/Mouse/TopicModeling/logs/fasttopics_%A_%a.err   # Standard error file
-#SBATCH --mem-per-cpu=150G                # Memory per CPU. Adjust based on your data size.             
+#SBATCH --mem-per-cpu=250G                # Memory per CPU. Adjust based on your data size.             
 #SBATCH --cpus-per-task=2                # Number of CPUs per task. 
 #SBATCH --partition=batch_cpu
-#SBATCH --qos=1d
+#SBATCH --qos=3d
 
 # --- Prepare Environment ---
 # Ensure the R environment is loaded. This might vary depending on your HPC setup.
