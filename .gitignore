@@ -46,4 +46,15 @@ AstroAtlas.Rproj
 *.pkgdown
 *.png 
 *.rda  
-
+*.csv
+*.tsv
+*.xlsx
+*.xls
+*.docx
+*.doc
+*.pptx
+*.ppt
+*.err
+*.out
+*.log
+*.fcs
