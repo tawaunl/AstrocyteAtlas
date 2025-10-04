@@ -6,34 +6,34 @@ library(grid)
 library(gridExtra)
 
 # Load data----------------
-k_values <- c(2,3, 10,14,16,18)
+k_values <- c(2,3, 10,14,16,18,22,26)
 out.dir <- "/gpfs/scratchfs01/site/u/lucast3/AstrocyteAtlas/AnalysisScripts/Mouse/TopicModeling"
 
-out <- readRDS(file.path(out.dir,"HumanResults","compGoM_results.rds"))
+data <- readRDS("/gstore/data/astroMetaAnalysis/data/DS_50k.rds")
+out <- readRDS(file.path(out.dir,"MouseResults","compGoM_results.rds"))
 names(out) <- paste0("K_", k_values)
 bic.plot <- sapply(names(out), function(x) out[[x]]$BIC)
 bic.plot <- data.frame(bic.plot)
 bic.plot$K <- rownames(bic.plot)
 bic.plot$K <- factor(bic.plot$K, levels=names(out))
-png(file.path(out.dir,"HumanResults","BIC_plot.png"), width=800, height=600)
+png(file.path(out.dir,"MouseResults","BIC_plot.png"), width=800, height=600)
 ggplot(bic.plot, aes(x=K, y=bic.plot)) +
   geom_point() + geom_line() +
   xlab("Number of Topics (K)") + ylab("BIC") +
   theme_bw(base_size=18)
 dev.off()
-# Plot results for K=14----------------
-k <- 14
-data <- readRDS("/gstore/data/astroMetaAnalysis/data/HumanSubDataforTopics.rds")
 
-usage <- read.csv(file.path(out.dir,"HumanResults",paste0("usage_k",k,".csv")))
-theta <- read.csv( file.path(out.dir,"HumanResults",paste0("theta_k",k,".csv")))
-scores <- read.csv(file.path(out.dir,"HumanResults",paste0("score_min_k",k,".csv")))
+k <- 14
+
+usage <- read.csv(file.path(out.dir,"MouseResults",paste0("usage_k",k,".csv")))
+theta <- read.csv( file.path(out.dir,"MouseResults",paste0("theta_k",k,".csv")))
+scores <- read.csv(file.path(out.dir,"MouseResults",paste0("score_min_k",k,".csv")))
 
 colnames(usage)[1] <- "cell_id"
 colnames(theta)[1] <- "gene"
 colnames(scores)[1] <- "topic"
 n_genes = 25
-n_features = 200
+n_features = 300
 prolif_topic = 'lda_18'
 prolif_cutoff = 0.08
 topic_range <- 1:k
@@ -50,11 +50,11 @@ plot_score_dict = list()
 
 for (topic in topic_range) {
   topic_scores = scores[topic,]
-
   topic_dict = list()
-  for (i in 1:n_features) {
+  for (i in 1:400) {
     gene_index <- as.numeric(topic_scores[paste0("indices.",i)])
     gene <- theta$gene[gene_index]
+    if(startsWith(gene,"Rps") |startsWith(gene,"Rpl") ){next}
     score = as.numeric(topic_scores[paste0("scores.",i)])
     topic_dict[gene] = score
   }
@@ -78,21 +78,19 @@ for(topic in topic_range){
 }
 
 
-pdf(file.path(out.dir,"HumanResults","TopGenesinTopics.pdf"),width = 11,height=11)
+pdf(file.path(out.dir,"MouseResults","TopGenesinTopics.pdf"),width = 11,height=11)
 do.call("grid.arrange",list(grobs=topic_plots,top=textGrob("Gene scores for each topic")))
 dev.off()
 
 topic_plots_umap <- list()
 x=1
 for(topic in topic_range){
-
-    topic_plots_umap[[x]] <- FeaturePlot(data,paste0("lda_",topic),pt.size = 1.5) +
+  topic_plots_umap[[topic]] <- FeaturePlot(data,paste0("lda_",topic),pt.size = 1.5,order = F) +
     ggtitle(paste0("Topic ",x)) +
     theme_void() + theme(plot.title = element_text(hjust = 0.5,face = "bold"), legend.position = "none") 
-    x=x+1
 }
 
-png(file.path(file.path(out.dir,"HumanResults","UMAPscoringTopics.png")),
+png(file.path(file.path(out.dir,"MouseResults","UMAPscoringTopics.png")),
     width = 2000, height=2000)
 do.call("grid.arrange",list(grobs=topic_plots_umap,
                             top=textGrob(expression(bold(underline("UMAP embedding for each topic"))))))
@@ -119,7 +117,7 @@ for(topic in 2:15){
 }
 
 ck <- compareCluster(geneList,
-                    fun = "gseGO",OrgDb = org.Mm.eg.db::org.Mm.eg.db ,ont="BP")
+                     fun = "gseGO",OrgDb = org.Mm.eg.db::org.Mm.eg.db ,ont="BP")
 
 pdf(file.path(fig.dir,"GSEAonTopics.pdf"),width=10,height = 14)
 dotplot(ck, by="NES") + ggtitle("GO:BP Pathways Topic Loadings") + 

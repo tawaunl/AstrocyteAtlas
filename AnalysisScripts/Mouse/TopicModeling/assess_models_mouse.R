@@ -12,7 +12,7 @@ library(MatrixExtra)
 
 # --- 1. Define the k values and model types to assess ---
 # These should match the values used in your sbatch array job.
-k_values <- c(2,3, 10,14,16,18,20,22,26)
+k_values <- c(2,3, 10,14,16,18,22,26)
 data.dir <- "/gpfs/scratchfs01/site/u/lucast3/AstrocyteAtlas/AnalysisScripts/Mouse/TopicModeling"
 out.dir <- "/gpfs/scratchfs01/site/u/lucast3/AstrocyteAtlas/AnalysisScripts/Mouse/TopicModeling/MouseResults"
 if (!dir.exists(out.dir)) {
@@ -76,7 +76,8 @@ for (k in k_values){
   write.csv(usage, file.path(out.dir,paste0("usage_k",k ,".csv")))
   write.csv(theta, file.path(out.dir,paste0("theta_k",k ,".csv")))
   
-  top_features_min <- ExtractTopFeatures(theta, top_features = 200, shared = T, method = "poisson", options = "min")
+  top_features_min <- ExtractTopFeatures(theta, top_features = 400, shared = T,
+                                         method = "poisson", options = "min")
   write.csv(top_features_min, file.path(out.dir,paste0("score_min_k",k ,".csv"))
   )
   message(paste("Saved usage, theta, and top features for k =", k))
