@@ -76,7 +76,7 @@ for (k in k_values){
   write.csv(usage, file.path(out.dir,paste0("usage_k",k ,".csv")))
   write.csv(theta, file.path(out.dir,paste0("theta_k",k ,".csv")))
   
-  top_features_min <- ExtractTopFeatures(theta, top_features = 400, shared = T,
+  top_features_min <- ExtractTopFeatures(theta, top_features = 52608, shared = F ,
                                          method = "poisson", options = "min")
   write.csv(top_features_min, file.path(out.dir,paste0("score_min_k",k ,".csv"))
   )
