@@ -23,7 +23,7 @@ ggplot(bic.plot, aes(x=K, y=bic.plot)) +
   theme_bw(base_size=18)
 dev.off()
 
-k <- 14
+k <- 10
 
 usage <- read.csv(file.path(out.dir,"MouseResults",paste0("usage_k",k,".csv")))
 theta <- read.csv( file.path(out.dir,"MouseResults",paste0("theta_k",k,".csv")))
@@ -34,8 +34,6 @@ colnames(theta)[1] <- "gene"
 colnames(scores)[1] <- "topic"
 n_genes = 25
 n_features = 300
-prolif_topic = 'lda_18'
-prolif_cutoff = 0.08
 topic_range <- 1:k
 
 # join Usage to Seurat object
@@ -54,7 +52,7 @@ for (topic in topic_range) {
   for (i in 1:400) {
     gene_index <- as.numeric(topic_scores[paste0("indices.",i)])
     gene <- theta$gene[gene_index]
-    if(startsWith(gene,"Rps") |startsWith(gene,"Rpl") ){next}
+    #if(startsWith(gene,"Rps") |startsWith(gene,"Rpl") ){next}
     score = as.numeric(topic_scores[paste0("scores.",i)])
     topic_dict[gene] = score
   }
@@ -81,7 +79,7 @@ for(topic in topic_range){
 pdf(file.path(out.dir,"MouseResults","TopGenesinTopics.pdf"),width = 11,height=11)
 do.call("grid.arrange",list(grobs=topic_plots,top=textGrob("Gene scores for each topic")))
 dev.off()
-
+ 
 topic_plots_umap <- list()
 x=1
 for(topic in topic_range){
@@ -97,15 +95,42 @@ do.call("grid.arrange",list(grobs=topic_plots_umap,
 dev.off()
 
 
-# GSEA on top 50 Topic loadings
+# GSEA on Topic loadings---------
 library(clusterProfiler)
-# First get top 50 loadings from each topic
+#Updated Pathways -------------------
+rda_fname <- file.path(out.dir,"results",paste0("GoM_k",k,"_results.rda"))
+load(rda_fname)
+
+fullScores <- ExtractTopFeatures(theta = Topic_clus$theta,
+                                 top_features = dim(Topic_clus$theta)[1],
+                                 method ="bernoulli",options = "min",shared = F)
+
+genes <- theta$gene
+num_genes <- length(genes)
+num_topics <- nrow(fullScores$indices)
+
+scores_matrix <- matrix(
+  data = 0,
+  nrow = num_genes,
+  ncol = num_topics,
+  dimnames = list(
+    genes, # Set row names to your gene names
+    paste0("Topic_", 1:num_topics) # Set column names
+  )
+)
+for (i in 1:num_topics) {
+  cluster_indices <- fullScores$indices[i, ]
+  cluster_indices <- cluster_indices[!is.na(cluster_indices)]
+  cluster_scores  <- fullScores$scores[i, ]
+  cluster_scores <- cluster_scores[!is.na(cluster_scores)]
+  scores_matrix[cluster_indices, i] <- cluster_scores
+}
 geneList <- list()
-for(topic in 2:15){
-  lda_data <- theta[,c(1,topic)]
-  lda_data <- lda_data[order(lda_data[,2],decreasing = TRUE),]
-  genes <- lda_data[,2]
-  names(genes) <-lda_data[,1]
+for(topic in 1:k){
+  lda_data <- data.frame(scores=scores_matrix[,topic]) %>% arrange(desc(scores))
+  
+  genes <- lda_data$scores
+  names(genes) <- rownames(lda_data)
   
   gene.df <- bitr( names(genes), fromType = "SYMBOL",
                    toType = c("ENSEMBL", "ENTREZID"),
@@ -113,16 +138,33 @@ for(topic in 2:15){
   x <- match(gene.df$SYMBOL,names(genes))
   gsea <- genes[x]
   names(gsea) <- gene.df$ENTREZID
-  geneList[[colnames(lda_data)[2]]] <- gsea
+  geneList[[paste0("Topic_",topic)]] <- gsea[unique(names(gsea))]
 }
 
-ck <- compareCluster(geneList,
-                     fun = "gseGO",OrgDb = org.Mm.eg.db::org.Mm.eg.db ,ont="BP")
+ck <- lapply(geneList, function(x){
+  ReactomePA::enrichPathway(names(x[x>0]), organism = "mouse",
+                            pvalueCutoff = .05, maxGSSize = 1000,readable = FALSE)
+})
 
-pdf(file.path(fig.dir,"GSEAonTopics.pdf"),width=10,height = 14)
-dotplot(ck, by="NES") + ggtitle("GO:BP Pathways Topic Loadings") + 
-  theme(axis.title.x = element_text(size = 14,face="bold"),
-        axis.text.x = element_text(angle = 90)) +
-  theme(plot.title = element_text(hjust = 0.5,size=20,face=20)) +
-  xlab("LDA Topic")
+saveRDS(ck, file.path(out.dir,"MouseGSEA_results.rds"))
+ck <- readRDS(file.path(out.dir,"MouseGSEA_results.rds"))
+
+gsea_results <- lapply(names(ck), function(cluster){
+  ck[[cluster]]@result
+})
+names(gsea_results) <- names(ck)
+# Assuming gsea_results is a list of GSEA results per cluster
+gsea_results <- gsea_results[topic_range]
+source("~/scHelpers.R")
+
+pdf(file.path(out.dir,"GSEAonTopics_Mouse.pdf"),width=8,height = 8)
+DotPlotCompare(
+  gsea_list = gsea_results,
+  n = 5,
+  size_col = "NES",
+  color_col = "p.adjust",
+  size_cutoff = NULL,      # Filter to pathways with NES >= 1.5
+  color_cutoff = 0.1,
+  direction = "positive" # Filter to pathways with p.adjust <= 0.05
+)
 dev.off()

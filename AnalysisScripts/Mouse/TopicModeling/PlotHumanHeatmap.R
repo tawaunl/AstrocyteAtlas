@@ -1,44 +1,32 @@
 # Load necessary libraries
 #library(SeuratObject)
-
+library(Seurat)
 library(tidyverse)
 library(ComplexHeatmap)
 library(circlize)
 library(CountClust)
 # Load Data-------- ---
 dir <- "/gpfs/scratchfs01/site/u/lucast3/AstrocyteAtlas/AnalysisScripts/Mouse/TopicModeling"
+out.dir <- "/gpfs/scratchfs01/site/u/lucast3/AstrocyteAtlas/AnalysisScripts/Mouse/TopicModeling/HumanResults"
 
-# Main expression matrix (e.g., Log-Fold Change)
-data <- readRDS("/gstore/data/astroMetaAnalysis/data/DS_50k.rds")
-levels(data$finalClusters) <- c("0","1","2","3","4","0")
-data$finalClusters <- factor(data$finalClusters)
-DAAsubclusters <- read.csv("AnalysisScripts/Mouse/TopicModeling/DAAsubclusters.csv",header = T,row.names = 1)
-meta <- data@meta.data
+data <- readRDS("/gstore/data/astroMetaAnalysis/data/HumanSubDataforTopics.rds")
 
-meta$cell_id <- rownames(meta)
-meta <- left_join(meta,DAAsubclusters,by="cell_id")
-rownames(meta) <- meta$cell_id
-meta$subcluster[which(meta$finalClusters==0)] <- "mAstro_1"
-meta$subcluster[which(meta$finalClusters==4)] <- "mAstro_4"
-data@meta.data <- meta
-
-
-exclude <- c(data$cell_id[which(data$finalClusters==1 & is.na(data$subcluster))],
-             data$cell_id[which(data$finalClusters==2 & is.na(data$subcluster))])
-data.filt <- subset(data,cells = exclude,invert=T)
-
-bulk <- Seurat::AggregateExpression(data.filt,assays = "RNA",group.by =c("Sample","Disease","StudyName","finalClusters","subcluster"),
+bulk <- Seurat::AggregateExpression(data,assays = "RNA",
+                                    group.by =c("donorIdUnique",
+                                                "diagnosis_harmonized_by_disease",
+                                                "studybatch","ClusterNames"),
                                     return.seurat = T)
 counts <- Seurat::GetAssayData(bulk,slot = "counts",assay = "RNA")
 
+
 out.dir <- "/gpfs/scratchfs01/site/u/lucast3/AstrocyteAtlas/AnalysisScripts/Mouse/TopicModeling"
-k <- 10
+k <- 14
 topic_range <- 1:k
 
-rda_fname <- file.path(out.dir,"results",paste0("GoM_k",k,"_results.rda"))
+rda_fname <- file.path(out.dir,"results",paste0("GoM_Human_k",k,"_results.rda"))
 load(rda_fname)
-usage <- read.csv(file.path(out.dir,"MouseResults",paste0("usage_k",k,".csv")))
-theta <- read.csv( file.path(out.dir,"MouseResults",paste0("theta_k",k,".csv")))
+usage <- read.csv(file.path(out.dir,"HumanResults",paste0("usage_k",k,".csv")))
+theta <- read.csv( file.path(out.dir,"HumanResults",paste0("theta_k",k,".csv")))
 
 fullScores <- ExtractTopFeatures(theta = Topic_clus$theta,
                                  top_features = dim(Topic_clus$theta)[1],
@@ -77,17 +65,14 @@ for (topic in topic_range) {
   plot_score_dict[[topic]] = topic_dict
 }
 
-names(plot_score_dict) <- paste0("lda_", 1:k)
+names(plot_score_dict) <- paste0("lda_", topic_range)
 
 
 # Convert the list of top genes into a single, clean data frame
 # The `bind_rows` function with `.id = "topic_group"` is perfect for this
 gene_groups_df <- enframe(unlist(plot_score_dict), name = "name", value = "score") %>%
   separate(name, into = c("topic_group", "gene"), sep = "\\.")
-# Now gene_groups_df looks like this:
-#   topic_group gene     score
-# 1 lda_1       Gene454  0.040
-# 2 lda_1       Gene23   0.015
+
 
 top_genes_df <- gene_groups_df %>%
   group_by(topic_group) %>%
@@ -105,27 +90,24 @@ names(dominant_topic) <- rownames(usage)
 cells <- rownames(usage) # Get cell IDs from your usage matrix
 cell_metadata <- data.frame(
   cell_id = cells,
-  clusters = data$finalClusters,
-  disease = data$Disease,
-  study = data$StudyName,
-  subcluster=data$subcluster
+  clusters = data$ClusterNames,
+  disease = data$diagnosis_harmonized_by_disease,
+  study = data$studybatch
 )
 
 
-# 3. (Recommended) Normalize the pseudobulk matrix and scale
+# 3. Normalize the pseudobulk matrix and scale
 
-log_normalized_pseudobulk <- log1p(sweep(counts, 2, 1e4 / colSums(as.matrix(counts)), `*`)) #CPM on full datasey
-
-if(file.exists(file.path(dir,"MouseCorrectedCounts.rds"))){
-  cpm_data_adjusted <- readRDS(file.path(dir,"MouseCorrectedCounts.rds"))
+log_normalized_pseudobulk <- bulk@assays[["RNA"]]@layers[["data"]] 
+log_normalized_pseudobulk <- log_normalized_pseudobulk[-which(rownames(log_normalized_pseudobulk) %in% unique(genes_with_zero_variance$gene)),]
+if(file.exists(file.path(dir,"HumanCorrectedCounts.rds"))){
+  cpm_data_adjusted <- readRDS(file.path(dir,"HumanCorrectedCounts.rds"))
 } else{
   cpm_data_adjusted <- sva::ComBat(dat = log_normalized_pseudobulk,
-                                   batch = bulk$StudyName, par.prior = F, prior.plots = FALSE)
+                                   batch = bulk$studybatch, par.prior = F, prior.plots = FALSE)
   saveRDS(cpm_data_adjusted,
-          file.path(dir,"MouseCorrectedCounts.rds"))
+          file.path(dir,"HumanCorrectedCounts.rds"))
 }
-
-
 
 common_genes <- intersect(gene_groups_df$gene, rownames(cpm_data_adjusted))
 log_normalized_pseudobulk <- cpm_data_adjusted[common_genes, ]
@@ -136,7 +118,7 @@ expression_matrix_scaled <- t(scale(t(log_normalized_pseudobulk)))
 pseudobulk_metadata <- data.frame(
   group = colnames(expression_matrix_scaled)
 ) %>%
-  separate(group, into = c("cell","disease","study","clusters","subcluster"), sep = "_", remove = F)
+  separate(group, into = c("cell","disease","study","clusters"), sep = "_", remove = F)
 
 
 rownames(pseudobulk_metadata) <- pseudobulk_metadata$group
@@ -144,9 +126,6 @@ rownames(pseudobulk_metadata) <- pseudobulk_metadata$group
 pseudobulk_metadata$clusters <- factor(pseudobulk_metadata$clusters)
 
 
-levels(pseudobulk_metadata$clusters) = c("0","1","2","4")
-pseudobulk_metadata_ordered <- pseudobulk_metadata %>%
-  arrange(clusters, disease)
 
 # 3. Filter and order your gene annotation to match the final matrix
 gene_groups_df_filtered <- gene_groups_df %>% 
@@ -154,33 +133,38 @@ gene_groups_df_filtered <- gene_groups_df %>%
   arrange(topic_group)
 
 expression_matrix_final <- expression_matrix_scaled[gene_groups_df_filtered$gene, ]
-expression_matrix_ordered <- expression_matrix_final[, rownames(pseudobulk_metadata_ordered)]
 
 color_list <- list(
-  clusters = c("0" = "dodgerblue", "1" = "goldenrod1","2"="red", "4" = "darkgreen"), # Add cluster colors
-  disease = c("AD"="darkgreen","AD-control"="lightgreen","MS"="purple","MS-control"="violet")
+  clusters =c("NEAT1-hi"=adjustcolor('#31a354', alpha.f = 0.9),
+              "GFAP-hi"= '#8856a7',
+              "DST-hi"= adjustcolor('#fa9fb5', 0.9),
+              "BCYRN-hi"='#2b8cbe',
+              "ADGRV1-hi"= adjustcolor('#fec44f', alpha.f = 0.9),
+              "NRXN1-hi"=adjustcolor('#c51b8a', 0.9),
+              "APOE-hi"=adjustcolor('#d95f0e', alpha.f = 0.9),
+              "SLC1A2-hi"=adjustcolor('turquoise1', alpha.f = 0.9)), # Add cluster colors
+  disease = c("AD"="darkgreen","AD-Control"="lightgreen","MS"="purple","MS-Control"="violet","PD"="blue")
   
 )
 
 # Update the HeatmapAnnotation object to include 'cluster'
 col_annotation <- HeatmapAnnotation(
-  clusters = pseudobulk_metadata_ordered[, c("clusters")], # Add cluster here
-  disease= pseudobulk_metadata_ordered[, c("disease")],
-  study=pseudobulk_metadata_ordered$study,
-  subcluster=pseudobulk_metadata_ordered$subcluster,
+  clusters = pseudobulk_metadata[, c("clusters")], # Add cluster here
+  disease= pseudobulk_metadata[, c("disease")],
+  study=pseudobulk_metadata$study,
   col = color_list
 )
 
 
 ht <- Heatmap(
-  expression_matrix_ordered,
+  expression_matrix_final,
   name = "Scaled Exp",
   col = colorRamp2(c(-2, 0, 2), c("blue", "white", "red")),
-  cluster_rows = T,
+  cluster_rows = F,
   cluster_columns = F,
   top_annotation = col_annotation,
   row_split = gene_groups_df_filtered$topic_group,
-  column_split = pseudobulk_metadata_ordered$clusters,
+  column_split = pseudobulk_metadata$cluster,
   # --- AESTHETICS ---
   show_row_names = FALSE,
   show_column_names = F,
