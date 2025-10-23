@@ -145,13 +145,15 @@ for(topic in 1:k){
   geneList[[paste0("Topic_",topic)]] <- gsea[unique(names(gsea))]
 }
 ## Reactome Enrichment ------------------
+out.dir <- "/gpfs/scratchfs01/site/u/lucast3/AstrocyteAtlas/AnalysisScripts/Mouse/TopicModeling/HumanResults"
+
 ck <- lapply(geneList, function(x){
   ReactomePA::enrichPathway(names(x[x>0]), organism = "human",
-                            pvalueCutoff = .05, maxGSSize = 1000,readable = FALSE)
+                            pvalueCutoff = .1, maxGSSize = 1000,readable = FALSE)
 })
 
-saveRDS(ck, file.path(data.dir,"HumanReactomeEnrichment_results.rds"))
-ck <- readRDS(file.path(data.dir,"HumanReactomeEnrichment_results.rds"))
+saveRDS(ck, file.path(out.dir,"HumanReactomeEnrichment_results.rds"))
+ck <- readRDS(file.path(out.dir,"HumanReactomeEnrichment_results.rds"))
 
 gsea_results <- lapply(names(ck), function(cluster){
   ck[[cluster]]@result
@@ -161,14 +163,14 @@ names(gsea_results) <- names(ck)
 gsea_results <- gsea_results[topic_range]
 source("~/scHelpers.R")
 
-pdf(file.path(fig.dir,"ReactomeEnrichmentonTopics_Human.pdf"),width=8,height = 8)
+pdf(file.path(out.dir,"ReactomeEnrichmentonTopics_Human.pdf"),width=10,height = 10)
 DotPlotCompare(
   gsea_list = gsea_results,
   n = 3,
   size_col = "RichFactor",
   color_col = "pvalue",
   size_cutoff = NULL,      # Filter to pathways with NES >= 1.5
-  color_cutoff = 0.01,
+  color_cutoff = 0.1,
   direction = "positive" # Filter to pathways with p.adjust <= 0.05
 )
 dev.off()
@@ -179,8 +181,8 @@ ck <- lapply(geneList, function(x){
                             pvalueCutoff = .1, maxGSSize = 1000)
 })
 
-saveRDS(ck, file.path(data.dir,"HumanReactomeGSEA_results.rds"))
-ck <- readRDS(file.path(data.dir,"HumanReactomeGSEA_results.rds"))
+saveRDS(ck, file.path(out.dir,"HumanReactomeGSEA_results.rds"))
+ck <- readRDS(file.path(out.dir,"HumanReactomeGSEA_results.rds"))
 
 gsea_results <- lapply(names(ck), function(cluster){
   ck[[cluster]]@result
@@ -190,11 +192,40 @@ names(gsea_results) <- names(ck)
 gsea_results <- gsea_results[topic_range]
 source("~/scHelpers.R")
 
-pdf(file.path(fig.dir,"ReactomeGSEAonTopics_Human.pdf"),width=8,height = 8)
+pdf(file.path(out.dir,"ReactomeGSEAonTopics_Human.pdf"),width=10,height = 10)
 DotPlotCompare(
   gsea_list = gsea_results,
   n = 3,
-  size_col = "RichFactor",
+  size_col = "NES",
+  color_col = "pvalue",
+  size_cutoff = NULL,      # Filter to pathways with NES >= 1.5
+  color_cutoff = 0.1,
+  direction = "positive" # Filter to pathways with p.adjust <= 0.05
+)
+dev.off()
+
+## GSEA GO:BP----------
+ck <- lapply(geneList, function(x){
+  gseGO(x[x>0], OrgDb = org.Hs.eg.db::org.Hs.eg.db,ont = "BP",
+                            pvalueCutoff = .1, maxGSSize = 1000)
+})
+
+saveRDS(ck, file.path(out.dir,"HumanGO_BP_GSEA_results.rds"))
+ck <- readRDS(file.path(out.dir,"HumanGO_BP_GSEA_results.rds"))
+
+gsea_results <- lapply(names(ck), function(cluster){
+  ck[[cluster]]@result
+})
+names(gsea_results) <- names(ck)
+# Assuming gsea_results is a list of GSEA results per cluster
+gsea_results <- gsea_results[topic_range]
+source("~/scHelpers.R")
+
+pdf(file.path(out.dir,"GO_BP_GSEAonTopics_Human.pdf"),width=8,height = 8)
+DotPlotCompare(
+  gsea_list = gsea_results,
+  n = 3,
+  size_col = "NES",
   color_col = "pvalue",
   size_cutoff = NULL,      # Filter to pathways with NES >= 1.5
   color_cutoff = 0.01,
@@ -202,28 +233,28 @@ DotPlotCompare(
 )
 dev.off()
 
-## Erichment GO:BP----------
+## Enrichment GO:BP----------
 ck <- lapply(geneList, function(x){
-  gseGO(x, organism = "human",ont = "BP",
-                            pvalueCutoff = .05, maxGSSize = 1000)
+  enrichGO(names(x[x>0]), OrgDb = org.Hs.eg.db::org.Hs.eg.db,ont = "BP",
+        pvalueCutoff = .1, maxGSSize = 1000,readable = TRUE)
 })
 
-saveRDS(ck, file.path(data.dir,"HumanGO_BP_GSEA_results.rds"))
-ck <- readRDS(file.path(data.dir,"HumanGO_BP_GSEA_results.rds"))
+saveRDS(ck, file.path(out.dir,"HumanGO_BP_Enrichment_results.rds"))
+ck <- readRDS(file.path(out.dir,"HumanGO_BP_Enrichment_results.rds"))
 
 gsea_results <- lapply(names(ck), function(cluster){
   ck[[cluster]]@result
 })
 names(gsea_results) <- names(ck)
-# Assuming gsea_results is a list of GSEA results per cluster
+# Assuming gsea_results is a list of Enrichment results per cluster
 gsea_results <- gsea_results[topic_range]
 source("~/scHelpers.R")
 
-pdf(file.path(fig.dir,"GO_BP_GSEAonTopics_Human.pdf"),width=8,height = 8)
+pdf(file.path(out.dir,"GO_BP_EnrichmentonTopics_Human.pdf"),width=8,height = 8)
 DotPlotCompare(
   gsea_list = gsea_results,
   n = 3,
-  size_col = "RichFactor",
+  size_col = "Count",
   color_col = "pvalue",
   size_cutoff = NULL,      # Filter to pathways with NES >= 1.5
   color_cutoff = 0.01,

@@ -52,7 +52,7 @@ for (topic in topic_range) {
   for (i in 1:400) {
     gene_index <- as.numeric(topic_scores[paste0("indices.",i)])
     gene <- theta$gene[gene_index]
-    #if(startsWith(gene,"Rps") |startsWith(gene,"Rpl") ){next}
+    if(startsWith(gene,"Rps") |startsWith(gene,"Rpl") ){next}
     score = as.numeric(topic_scores[paste0("scores.",i)])
     topic_dict[gene] = score
   }
@@ -140,14 +140,16 @@ for(topic in 1:k){
   names(gsea) <- gene.df$ENTREZID
   geneList[[paste0("Topic_",topic)]] <- gsea[unique(names(gsea))]
 }
+## Reactome Enrichment ------------------
+out.dir <- "/gpfs/scratchfs01/site/u/lucast3/AstrocyteAtlas/AnalysisScripts/Mouse/TopicModeling/MouseResults"
 
 ck <- lapply(geneList, function(x){
   ReactomePA::enrichPathway(names(x[x>0]), organism = "mouse",
-                            pvalueCutoff = .05, maxGSSize = 1000,readable = FALSE)
+                            pvalueCutoff = .1, maxGSSize = 1000,readable = FALSE)
 })
 
-saveRDS(ck, file.path(out.dir,"MouseGSEA_results.rds"))
-ck <- readRDS(file.path(out.dir,"MouseGSEA_results.rds"))
+saveRDS(ck, file.path(out.dir,"MouseReactomeEnrichment_results.rds"))
+ck <- readRDS(file.path(out.dir,"MouseReactomeEnrichment_results.rds"))
 
 gsea_results <- lapply(names(ck), function(cluster){
   ck[[cluster]]@result
@@ -157,14 +159,101 @@ names(gsea_results) <- names(ck)
 gsea_results <- gsea_results[topic_range]
 source("~/scHelpers.R")
 
-pdf(file.path(out.dir,"GSEAonTopics_Mouse.pdf"),width=8,height = 8)
+pdf(file.path(out.dir,"ReactomeEnrichmentonTopics_Mouse.pdf"),width=10,height = 10)
 DotPlotCompare(
   gsea_list = gsea_results,
-  n = 5,
-  size_col = "NES",
-  color_col = "p.adjust",
+  n = 3,
+  size_col = "RichFactor",
+  color_col = "pvalue",
   size_cutoff = NULL,      # Filter to pathways with NES >= 1.5
   color_cutoff = 0.1,
+  direction = "positive" # Filter to pathways with p.adjust <= 0.05
+)
+dev.off()
+
+##GSEA Reactome ------------------
+ck <- lapply(geneList, function(x){
+  ReactomePA::gsePathway(x[x>0], organism = "mouse",seed = 824,
+                         pvalueCutoff = .1, maxGSSize = 1000)
+})
+
+saveRDS(ck, file.path(out.dir,"MouseReactomeGSEA_results.rds"))
+ck <- readRDS(file.path(out.dir,"MouseReactomeGSEA_results.rds"))
+
+gsea_results <- lapply(names(ck), function(cluster){
+  ck[[cluster]]@result
+})
+names(gsea_results) <- names(ck)
+# Assuming gsea_results is a list of GSEA results per cluster
+gsea_results <- gsea_results[topic_range]
+source("~/scHelpers.R")
+
+pdf(file.path(out.dir,"ReactomeGSEAonTopics_Mouse.pdf"),width=10,height = 10)
+DotPlotCompare(
+  gsea_list = gsea_results,
+  n = 3,
+  size_col = "NES",
+  color_col = "pvalue",
+  size_cutoff = NULL,      # Filter to pathways with NES >= 1.5
+  color_cutoff = 0.1,
+  direction = "positive" # Filter to pathways with p.adjust <= 0.05
+)
+dev.off()
+
+## GSEA GO:BP----------
+ck <- lapply(geneList, function(x){
+  gseGO(x[x>0], OrgDb = org.Mm.eg.db::org.Mm.eg.db,ont = "BP",
+        pvalueCutoff = .1, maxGSSize = 1000)
+})
+
+saveRDS(ck, file.path(out.dir,"MouseGO_BP_GSEA_results.rds"))
+ck <- readRDS(file.path(out.dir,"MouseGO_BP_GSEA_results.rds"))
+
+gsea_results <- lapply(names(ck), function(cluster){
+  ck[[cluster]]@result
+})
+names(gsea_results) <- names(ck)
+# Assuming gsea_results is a list of GSEA results per cluster
+gsea_results <- gsea_results[topic_range]
+source("~/scHelpers.R")
+
+pdf(file.path(out.dir,"GO_BP_GSEAonTopics_Mouse.pdf"),width=8,height = 8)
+DotPlotCompare(
+  gsea_list = gsea_results,
+  n = 3,
+  size_col = "NES",
+  color_col = "pvalue",
+  size_cutoff = NULL,      # Filter to pathways with NES >= 1.5
+  color_cutoff = 0.01,
+  direction = "positive" # Filter to pathways with p.adjust <= 0.05
+)
+dev.off()
+
+## Enrichment GO:BP----------
+ck <- lapply(geneList, function(x){
+  enrichGO(names(x[x>0]), OrgDb = org.Mm.eg.db::org.Mm.eg.db,ont = "BP",
+           pvalueCutoff = .1, maxGSSize = 1000,readable = TRUE)
+})
+
+saveRDS(ck, file.path(out.dir,"MouseGO_BP_Enrichment_results.rds"))
+ck <- readRDS(file.path(out.dir,"MouseGO_BP_Enrichment_results.rds"))
+
+gsea_results <- lapply(names(ck), function(cluster){
+  ck[[cluster]]@result
+})
+names(gsea_results) <- names(ck)
+# Assuming gsea_results is a list of Enrichment results per cluster
+gsea_results <- gsea_results[topic_range]
+source("~/scHelpers.R")
+
+pdf(file.path(out.dir,"GO_BP_EnrichmentonTopics_Mouse.pdf"),width=8,height = 8)
+DotPlotCompare(
+  gsea_list = gsea_results,
+  n = 3,
+  size_col = "Count",
+  color_col = "pvalue",
+  size_cutoff = NULL,      # Filter to pathways with NES >= 1.5
+  color_cutoff = 0.01,
   direction = "positive" # Filter to pathways with p.adjust <= 0.05
 )
 dev.off()
